@@ -368,22 +368,24 @@ export default function AddTip() {
   }
 
   return (
-    <div style={{ maxWidth: 640, margin: '0 auto', padding: 24 }}>
-      <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 4, flexWrap: 'wrap' }}>
-        <p style={{ fontFamily: 'var(--sv-font-display)', fontWeight: 600, fontSize: 20, color: 'var(--sv-ink)' }}>
-          {t('addTipFor')}
-        </p>
-        {machines.length > 0 ? (
-          <MachineSelect value={machine} onChange={setMachine} machines={machines} />
-        ) : (
-          <span style={{ fontSize: 13, color: 'var(--sv-muted)' }}>{t('noMachinesAssigned')}</span>
-        )}
+    <div className="sv-premium-page sv-add-tip-page">
+      <div className="sv-premium-hero sv-premium-hero--worker">
+        <div>
+          <span className="sv-kicker"><Sparkles size={14} /> Capture expertise</span>
+          <h1>Turn field know-how into approved machine intelligence.</h1>
+          <p>{t('addTipSubtitle')}</p>
+        </div>
+        <div className="sv-machine-pill-panel">
+          <span>{t('addTipFor')}</span>
+          {machines.length > 0 ? (
+            <MachineSelect value={machine} onChange={setMachine} machines={machines} />
+          ) : (
+            <span style={{ fontSize: 13, color: 'var(--sv-muted)' }}>{t('noMachinesAssigned')}</span>
+          )}
+        </div>
       </div>
-      <p style={{ fontSize: 13, color: 'var(--sv-muted)', marginBottom: 20 }}>
-        {t('addTipSubtitle')}
-      </p>
 
-      <div className="sv-card" style={{ padding: 24 }}>
+      <div className="sv-lux-form sv-tip-composer">
         <StepDots phase={phase} />
 
         {phase === PHASE.WRITING && (

@@ -35,7 +35,7 @@ export default function Analytics() {
 
   if (loading && !data) {
     return (
-      <div style={{ padding: '28px 32px' }}>
+      <div className="sv-premium-page">
         <p style={{ color: 'var(--sv-muted)' }}>Loading analytics…</p>
       </div>
     );
@@ -46,15 +46,12 @@ export default function Analytics() {
   const tMax = Math.max(1, ...(data?.tips_by_machine || []).map((x) => x.count));
 
   return (
-    <div style={{ padding: '28px 32px', maxWidth: 960 }}>
-      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 8 }}>
+    <div className="sv-premium-page sv-analytics-page">
+      <div className="sv-premium-hero">
         <div>
-          <p style={{ fontFamily: 'var(--sv-font-display)', fontWeight: 600, fontSize: 22, color: 'var(--sv-ink)', margin: 0 }}>
-            Analytics
-          </p>
-          <p style={{ fontSize: 13, color: 'var(--sv-muted)', margin: '4px 0 0' }}>
-            Simple view of questions, tips, tickets, and machines.
-          </p>
+          <span className="sv-kicker"><BarChart3 size={14} /> Analytics cockpit</span>
+          <h1>System intelligence, not simple stats.</h1>
+          <p>Track questions, tips, tickets, worker growth, and machine coverage from one executive-grade surface.</p>
         </div>
         <button
           onClick={load}

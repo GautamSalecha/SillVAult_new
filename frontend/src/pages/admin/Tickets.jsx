@@ -1,7 +1,7 @@
 import { useEffect, useState, useRef } from 'react';
 import { Api } from '../../lib/api';
 import { useToast } from '../../lib/toast';
-import { Ticket, ChevronDown } from 'lucide-react';
+import { Ticket, ChevronDown, ClipboardList } from 'lucide-react';
 
 const STATUS_OPTIONS = ['Open', 'In Progress', 'Resolved', 'Closed'];
 
@@ -118,7 +118,7 @@ export default function Tickets() {
 
   useEffect(() => {
     loadTickets();
-  }, [filter]);
+  }, [filter]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const loadTickets = async () => {
     setLoading(true);
@@ -156,17 +156,21 @@ export default function Tickets() {
   };
 
   return (
-    <div className="page" style={{ padding: '24px 28px', maxWidth: 960, margin: '0 auto' }}>
-      {/* Header */}
-      <div style={{ marginBottom: 28 }}>
-        <h1 style={{ margin: '0 0 6px 0', fontSize: 26 }}>Tickets</h1>
-        <p style={{ margin: 0, color: 'var(--sv-muted)' }}>
-          Manage issues reported by workers
-        </p>
+    <div className="sv-premium-page sv-admin-tickets-page">
+      <div className="sv-premium-hero">
+        <div>
+          <span className="sv-kicker"><ClipboardList size={14} /> Resolution command</span>
+          <h1>Tickets that stay visible until the work is done.</h1>
+          <p>Prioritize machine issues, move statuses, and keep worker-reported problems from disappearing.</p>
+        </div>
+        <div className="sv-hero-metrics">
+          <span><strong>{counts.Open}</strong> Open</span>
+          <span><strong>{counts['In Progress']}</strong> Active</span>
+        </div>
       </div>
 
       {/* Filter chips */}
-      <div style={{ display: 'flex', gap: 8, marginBottom: 24, flexWrap: 'wrap' }}>
+      <div className="sv-filter-row">
         <button
           onClick={() => setFilter('')}
           style={{
@@ -211,22 +215,19 @@ export default function Tickets() {
       {loading ? (
         <p style={{ color: 'var(--sv-muted)' }}>Loading tickets...</p>
       ) : tickets.length === 0 ? (
-        <div className="card" style={{
-          padding: 48,
-          textAlign: 'center',
-          border: '1px dashed var(--sv-border)',
-        }}>
-          <Ticket size={40} style={{ color: 'var(--sv-muted)', marginBottom: 12 }} />
-          <p style={{ margin: 0, color: 'var(--sv-muted)' }}>No tickets found</p>
+        <div className="sv-state-card sv-state-card--empty">
+          <Ticket size={34} />
+          <h3>No tickets found</h3>
+          <p>Try another status filter or wait for a worker to raise an issue.</p>
         </div>
       ) : (
-        <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+        <div className="sv-admin-ticket-list">
           {tickets.map((t) => {
             const sc = statusColor[t.status] || statusColor.Open;
             return (
               <div
                 key={t.id}
-                className="card"
+                className="sv-admin-ticket-card"
                 style={{
                   padding: 18,
                   display: 'flex',

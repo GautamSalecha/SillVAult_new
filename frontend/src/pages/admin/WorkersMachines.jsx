@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { Plus, X } from 'lucide-react';
+import { Plus, UserRoundCog, X } from 'lucide-react';
 import { Api } from '../../lib/api';
 import { useToast } from '../../lib/toast';
 import { useI18n } from '../../lib/i18n';
@@ -73,11 +73,18 @@ export default function WorkersMachines() {
   const unassignedMachines = allMachines.filter((m) => !assigned.includes(m));
 
   return (
-    <div style={{ padding: '24px 32px', display: 'flex', gap: 24 }}>
-      <div style={{ width: 260, flexShrink: 0 }}>
-        <p style={{ fontFamily: 'var(--sv-font-display)', fontWeight: 600, fontSize: 20, color: 'var(--sv-ink)', marginBottom: 16 }}>
-          Workers
-        </p>
+    <div className="sv-premium-page sv-workforce-page">
+      <div className="sv-premium-hero">
+        <div>
+          <span className="sv-kicker"><UserRoundCog size={14} /> Workforce command</span>
+          <h1>Manage people and machine access with confidence.</h1>
+          <p>Edit worker identity, profile details, and machine assignments from a single operational console.</p>
+        </div>
+      </div>
+
+      <div className="sv-workforce-layout">
+      <div className="sv-workforce-list">
+        <p className="sv-lux-form__eyebrow">Workers</p>
         <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
           {workers.map((w) => (
             <button
@@ -98,7 +105,7 @@ export default function WorkersMachines() {
         </div>
       </div>
 
-      <div style={{ flex: 1 }}>
+      <div className="sv-workforce-detail">
         {!selectedWorker ? (
           <p style={{ fontSize: 13, color: 'var(--sv-muted)', marginTop: 40 }}>Select a worker to manage machine access.</p>
         ) : (
@@ -153,6 +160,7 @@ export default function WorkersMachines() {
             )}
           </>
         )}
+      </div>
       </div>
     </div>
   );

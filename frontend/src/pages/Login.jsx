@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { ChevronLeft } from 'lucide-react';
+import { ChevronLeft, Factory, LockKeyhole, Sparkles, UserRound } from 'lucide-react';
 import Wordmark from '../components/Wordmark';
 import { Api } from '../lib/api';
 import { setWorkerSession, setAdminSession } from '../lib/auth';
@@ -22,39 +22,73 @@ export default function Login() {
   }
 
   return (
-    <div style={styles.page}>
-      <div style={styles.card}>
-        <div style={{ marginBottom: 24 }}><Wordmark size={20} /></div>
+    <div className="sv-login">
+      <div className="sv-login__showcase">
+        <Wordmark size={24} />
+        <div className="sv-login__headline">
+          <span className="sv-kicker"><Sparkles size={14} /> Industrial knowledge, captured live</span>
+          <h1>Turn every shift into a searchable skill vault.</h1>
+          <p>
+            Workers can ask machine questions, record field tips, complete safety flows,
+            and escalate maintenance issues from one polished console.
+          </p>
+        </div>
+        <div className="sv-login__visual" aria-hidden="true">
+          <div className="sv-login__machine">
+            <div className="sv-login__machine-top">
+              <span />
+              <span />
+              <span />
+            </div>
+            <div className="sv-login__machine-screen">
+              <Factory size={30} />
+              <strong>CNC-204</strong>
+              <small>3 verified answers ready</small>
+            </div>
+            <div className="sv-login__signal">
+              <span />
+              <span />
+              <span />
+              <span />
+            </div>
+          </div>
+        </div>
+      </div>
 
-        {step === STEP.LANGUAGE && (
-          <LanguageStep t={t} value={lang} languages={LANGUAGES} onPick={pickLanguage} />
-        )}
+      <div className="sv-login__panel">
+        <div className="sv-login__card">
+          <div style={{ marginBottom: 24 }}><Wordmark size={20} /></div>
 
-        {step === STEP.ROLE && (
-          <RoleStep
-            t={t}
-            onBack={() => setStep(STEP.LANGUAGE)}
-            onPick={(role) => setStep(role === 'worker' ? STEP.WORKER : STEP.ADMIN)}
-          />
-        )}
+          {step === STEP.LANGUAGE && (
+            <LanguageStep t={t} value={lang} languages={LANGUAGES} onPick={pickLanguage} />
+          )}
 
-        {step === STEP.WORKER && (
-          <WorkerAuth
-            t={t}
-            onBack={() => setStep(STEP.ROLE)}
-            onSuccess={() => navigate('/worker/ask')}
-            toast={push}
-          />
-        )}
+          {step === STEP.ROLE && (
+            <RoleStep
+              t={t}
+              onBack={() => setStep(STEP.LANGUAGE)}
+              onPick={(role) => setStep(role === 'worker' ? STEP.WORKER : STEP.ADMIN)}
+            />
+          )}
 
-        {step === STEP.ADMIN && (
-          <AdminAuth
-            t={t}
-            onBack={() => setStep(STEP.ROLE)}
-            onSuccess={() => navigate('/admin/pending-workers')}
-            toast={push}
-          />
-        )}
+          {step === STEP.WORKER && (
+            <WorkerAuth
+              t={t}
+              onBack={() => setStep(STEP.ROLE)}
+              onSuccess={() => navigate('/worker')}
+              toast={push}
+            />
+          )}
+
+          {step === STEP.ADMIN && (
+            <AdminAuth
+              t={t}
+              onBack={() => setStep(STEP.ROLE)}
+              onSuccess={() => navigate('/admin/analytics')}
+              toast={push}
+            />
+          )}
+        </div>
       </div>
     </div>
   );
@@ -95,19 +129,19 @@ function RoleStep({ t, onBack, onPick }) {
       <BackButton t={t} onClick={onBack} />
       <p style={styles.heading}>{t('selectRole')}</p>
       <div style={{ display: 'flex', flexDirection: 'column', gap: 12, marginTop: 24 }}>
-        <button 
-          className="sv-btn sv-btn--primary sv-btn--full" 
+        <button
+          className="sv-login__role"
           style={{ padding: '14px 16px', fontSize: '14px', fontWeight: 600, borderRadius: 'var(--sv-radius-md)' }} 
           onClick={() => onPick('worker')}
         >
-          {t('roleWorker')}
+          <UserRound size={18} /> {t('roleWorker')}
         </button>
         <button 
-          className="sv-btn sv-btn--outline sv-btn--full" 
+          className="sv-login__role sv-login__role--admin"
           style={{ padding: '14px 16px', fontSize: '14px', fontWeight: 600, borderRadius: 'var(--sv-radius-md)' }} 
           onClick={() => onPick('admin')}
         >
-          {t('roleAdmin')}
+          <LockKeyhole size={18} /> {t('roleAdmin')}
         </button>
       </div>
     </div>
@@ -326,26 +360,6 @@ function BackButton({ t, onClick }) {
 }
 
 const styles = {
-  page: {
-    minHeight: '100%',
-    display: 'flex',
-    alignItems: 'center',
-    justifyContent: 'center',
-    padding: '24px 16px',
-    background: 'linear-gradient(135deg, var(--sv-bg) 0%, var(--sv-bg-secondary) 100%)',
-    position: 'relative',
-    overflow: 'hidden',
-  },
-  card: {
-    width: '100%',
-    maxWidth: 420,
-    background: 'var(--sv-surface)',
-    border: '1px solid var(--sv-border)',
-    borderRadius: 'var(--sv-radius-xl)',
-    padding: '48px 32px',
-    boxShadow: '0 20px 25px -5px rgba(0, 0, 0, 0.1), 0 8px 10px -6px rgba(0, 0, 0, 0.08)',
-    animation: 'slideInUp var(--sv-transition-slow)',
-  },
   heading: {
     fontFamily: 'var(--sv-font-display)',
     fontWeight: 700,

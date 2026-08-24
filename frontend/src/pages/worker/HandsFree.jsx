@@ -8,12 +8,12 @@ import { useHandsFreeSession } from '../../lib/workerSession';
 import { useI18n } from '../../lib/i18n';
 import { getBrowserVoice } from '../../lib/voiceCapabilities';
 
-const KEY = 'sv_handsfree_prefs';
+const KEY = 'sv_handsfree_prefs_v2';
 function loadPrefs() {
   try {
-    return { continuous: true, spoken: true, activation: 'auto', ...JSON.parse(localStorage.getItem(KEY) || '{}') };
+    return { continuous: false, spoken: true, activation: 'ptt', ...JSON.parse(localStorage.getItem(KEY) || '{}') };
   } catch {
-    return { continuous: true, spoken: true, activation: 'auto' };
+    return { continuous: false, spoken: true, activation: 'ptt' };
   }
 }
 function savePrefs(p) {
@@ -139,11 +139,7 @@ export default function HandsFree() {
       push(msg, 'error');
     });
     if (!ok) return;
-    if (prefsRef.current.activation === 'auto') {
-      startListeningTurn();
-    } else {
-      setState(STATE.IDLE);
-    }
+    startListeningTurn();
   }
 
   function handleExitHandsFree() {
@@ -171,10 +167,12 @@ export default function HandsFree() {
         setLiveText('');
         if (err === '__EMPTY__') {
           if (
-            stateRef.current === STATE.LISTENING ||
-            stateRef.current === STATE.TRANSCRIBING
+            prefsRef.current.continuous &&
+            (stateRef.current === STATE.LISTENING || stateRef.current === STATE.TRANSCRIBING)
           ) {
             startListeningTurn();
+          } else {
+            setState(STATE.IDLE);
           }
           return;
         }
@@ -352,51 +350,15 @@ export default function HandsFree() {
   const ringLevel = state === STATE.LISTENING ? Math.max(8, voice.micLevel) : 0;
 
   return (
-    <div
-      style={{
-        height: '100%',
-        display: 'flex',
-        flexDirection: 'column',
-        alignItems: 'center',
-        padding: '20px 16px',
-        overflowY: 'auto',
-        background: 'var(--sv-bg)',
-      }}
-    >
-      <div
-        style={{
-          maxWidth: 440,
-          width: '100%',
-          display: 'flex',
-          flexDirection: 'column',
-          flex: 1,
-          minHeight: 0,
-        }}
-      >
-        <p
-          style={{
-            fontFamily: 'var(--sv-font-display)',
-            fontWeight: 600,
-            fontSize: 22,
-            color: 'var(--sv-ink)',
-            textAlign: 'center',
-            margin: 0,
-          }}
-        >
-          {t('handsFreeTitle')}
-        </p>
-        <p
-          style={{
-            fontSize: 13,
-            color: 'var(--sv-muted)',
-            textAlign: 'center',
-            margin: '6px 0 16px',
-          }}
-        >
-          {t('handsFreeSubtitle')}
-        </p>
+    <div className="sv-handsfree-page">
+      <div className="sv-handsfree-console">
+        <div className="sv-handsfree-hero">
+          <span className="sv-kicker"><Waves size={14} /> Hands-free command mode</span>
+          <h1>{t('handsFreeTitle')}</h1>
+          <p>{t('handsFreeSubtitle')}</p>
+        </div>
 
-        <div style={{ display: 'flex', justifyContent: 'center', marginBottom: 16 }}>
+        <div className="sv-handsfree-machine">
           {machines.length > 0 ? (
             <MachineSelect
               value={machine}
@@ -438,57 +400,18 @@ export default function HandsFree() {
         )}
 
         {/* Mic card */}
-        <div
-          className="sv-card"
-          style={{
-            display: 'flex',
-            flexDirection: 'column',
-            alignItems: 'center',
-            padding: '20px 16px',
-            marginBottom: 16,
-            borderRadius: 16,
-          }}
-        >
-          <div style={{ position: 'relative', width: 104, height: 104, marginBottom: 12 }}>
+        <div className="sv-handsfree-orb-card">
+          <div className={`sv-handsfree-orb sv-handsfree-orb--${state}`}>
             {state === STATE.LISTENING && (
               <div
-                style={{
-                  position: 'absolute',
-                  inset: -Math.round(ringLevel * 0.45),
-                  borderRadius: '50%',
-                  border: '3px solid var(--sv-brass-soft, #d4a574)',
-                  opacity: 0.55,
-                  transition: 'inset 0.08s linear',
-                  pointerEvents: 'none',
-                }}
+                className="sv-handsfree-orb__level"
+                style={{ inset: -Math.round(ringLevel * 0.45) }}
               />
             )}
             <button
               onClick={handleMicTap}
               disabled={isBusyState}
-              style={{
-                position: 'relative',
-                width: 104,
-                height: 104,
-                borderRadius: '50%',
-                display: 'flex',
-                alignItems: 'center',
-                justifyContent: 'center',
-                background:
-                  state === STATE.SPEAKING
-                    ? 'var(--sv-teal, #0d9488)'
-                    : state === STATE.LISTENING
-                      ? 'var(--sv-brass, #b8860b)'
-                      : 'var(--sv-brass, #b8860b)',
-                boxShadow:
-                  state === STATE.LISTENING
-                    ? '0 0 0 10px var(--sv-brass-soft, rgba(184,134,11,0.25))'
-                    : '0 4px 14px rgba(0,0,0,0.15)',
-                transition: 'box-shadow 0.2s ease, background 0.2s ease, transform 0.1s ease',
-                cursor: isBusyState ? 'not-allowed' : 'pointer',
-                border: 'none',
-                opacity: isBusyState ? 0.7 : 1,
-              }}
+              className="sv-handsfree-orb__button"
               aria-label={state === STATE.LISTENING ? t('stopListeningAria') : t('startListeningAria')}
             >
               {state === STATE.SPEAKING ? (
@@ -501,16 +424,7 @@ export default function HandsFree() {
 
           <p
             aria-live="polite"
-            style={{
-              display: 'flex',
-              alignItems: 'center',
-              gap: 6,
-              fontSize: 14,
-              fontWeight: 600,
-              color: 'var(--sv-brass, #b8860b)',
-              textAlign: 'center',
-              margin: 0,
-            }}
+            className="sv-handsfree-status"
           >
             <Waves size={15} />
             {statusLabel}
@@ -519,19 +433,7 @@ export default function HandsFree() {
           {/* Live caption while speaking */}
           {state === STATE.LISTENING && (
             <div
-              style={{
-                marginTop: 14,
-                width: '100%',
-                minHeight: 52,
-                padding: '12px 14px',
-                borderRadius: 12,
-                background: 'var(--sv-bg, var(--sv-surface))',
-                border: '1px dashed var(--sv-border, #ccc)',
-                fontSize: 15,
-                lineHeight: 1.4,
-                color: liveText ? 'var(--sv-ink)' : 'var(--sv-muted)',
-                textAlign: 'center',
-              }}
+              className="sv-handsfree-caption"
             >
               {liveText || 'Speak now… your words will appear here'}
             </div>
@@ -566,19 +468,7 @@ export default function HandsFree() {
         </div>
 
         {/* Transcript */}
-        <div
-          style={{
-            flex: '1 1 auto',
-            minHeight: 140,
-            maxHeight: 340,
-            overflowY: 'auto',
-            display: 'flex',
-            flexDirection: 'column',
-            gap: 12,
-            marginBottom: 16,
-            padding: transcript.length ? '4px 2px' : 0,
-          }}
-        >
+        <div className="sv-handsfree-transcript">
           {transcript.length === 0 ? (
             <p
               style={{
@@ -605,7 +495,7 @@ export default function HandsFree() {
         </div>
 
         {/* Settings */}
-        <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+        <div className="sv-handsfree-settings">
           <ToggleRow
             title={t('continuousListeningTitle')}
             note={t('continuousListeningNote')}

@@ -3,6 +3,7 @@ import { Api } from '../../lib/api';
 import { useToast } from '../../lib/toast';
 import { useI18n } from '../../lib/i18n';
 import { setAdminName } from '../../lib/auth';
+import { UserRoundCog } from 'lucide-react';
 
 const fieldLabel = { fontSize: 12, fontWeight: 600, color: 'var(--sv-muted)', marginBottom: 6, display: 'block' };
 const fieldInput = {
@@ -44,20 +45,24 @@ export default function Profile() {
   }
 
   return (
-    <div style={{ padding: '24px 32px', maxWidth: 480 }}>
-      <p style={{ fontFamily: 'var(--sv-font-display)', fontWeight: 600, fontSize: 20, color: 'var(--sv-ink)', marginBottom: 24 }}>
-        {t('adminProfileTitle')}
-      </p>
+    <div className="sv-premium-page sv-profile-page">
+      <div className="sv-premium-hero">
+        <div>
+          <span className="sv-kicker"><UserRoundCog size={14} /> Admin identity</span>
+          <h1>{t('adminProfileTitle')}</h1>
+          <p>Keep your operator profile sharp across analytics, review queues, and admin actions.</p>
+        </div>
+      </div>
 
       {loading ? null : (
-        <div className="sv-card">
+        <div className="sv-lux-form sv-profile-form">
           <div style={{ marginBottom: 14 }}>
-            <label style={fieldLabel}>{t('adminUsernameLabel')}</label>
-            <input style={{ ...fieldInput, opacity: 0.6 }} value={username} disabled />
+            <label className="sv-field-label" style={fieldLabel}>{t('adminUsernameLabel')}</label>
+            <input className="sv-field-input" style={{ ...fieldInput, opacity: 0.6 }} value={username} disabled />
           </div>
           <form onSubmit={handleSave}>
-            <label style={fieldLabel}>{t('adminDisplayNameLabel')}</label>
-            <input style={fieldInput} value={name} onChange={(e) => setName(e.target.value)} required />
+            <label className="sv-field-label" style={fieldLabel}>{t('adminDisplayNameLabel')}</label>
+            <input className="sv-field-input" style={fieldInput} value={name} onChange={(e) => setName(e.target.value)} required />
             <button
               className="sv-btn sv-btn--primary sv-btn--full"
               style={{ marginTop: 16, padding: '12px 16px', fontSize: 14, fontWeight: 600, borderRadius: 'var(--sv-radius-md)' }}

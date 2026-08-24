@@ -5,32 +5,36 @@
 
 :root {
   /* ---- Light Color Palette (Professional) ---- */
-  --sv-bg: #FAFBFC;
-  --sv-bg-secondary: #F3F5F8;
+  --sv-bg: #F6F8F5;
+  --sv-bg-secondary: #ECF1EE;
   --sv-surface: #FFFFFF;
-  --sv-surface-hover: #F9FAFB;
-  --sv-activation-bg: #0F1419;
+  --sv-surface-hover: #F8FBF9;
+  --sv-activation-bg: #14242D;
   --sv-activation-text: #FFFFFF;
   --sv-activation-border: #CBD5E1;
-  --sv-question-bg: #E7EEF6;
-  --sv-question-text: #162536;
-  --sv-ink: #0F1419;
-  --sv-ink-secondary: #475569;
-  --sv-muted: #64748B;
-  --sv-muted-light: #94A3B8;
+  --sv-question-bg: #E2EEF4;
+  --sv-question-text: #14242D;
+  --sv-ink: #11181D;
+  --sv-ink-secondary: #3D4B54;
+  --sv-muted: #667783;
+  --sv-muted-light: #9AA7AF;
+  --sv-text: var(--sv-ink);
+  --sv-card: var(--sv-surface);
+  --sv-primary: var(--sv-teal);
+  --sv-primary-soft: var(--sv-teal-soft);
   
   /* Brand Colors */
-  --sv-brass: #B8792D;
-  --sv-brass-dark: #8B5A1F;
-  --sv-brass-light: #D4915C;
-  --sv-brass-soft: #FEF3E2;
-  --sv-brass-hover: #A0671F;
+  --sv-brass: #B56D2A;
+  --sv-brass-dark: #7A4317;
+  --sv-brass-light: #E2A365;
+  --sv-brass-soft: #FFF1DE;
+  --sv-brass-hover: #91511E;
   
-  --sv-teal: #1F7A5C;
-  --sv-teal-dark: #145645;
-  --sv-teal-light: #4A9F7E;
-  --sv-teal-soft: #E8F5EF;
-  --sv-teal-hover: #1A6B52;
+  --sv-teal: #147C72;
+  --sv-teal-dark: #0E514C;
+  --sv-teal-light: #44B8A9;
+  --sv-teal-soft: #E4F7F3;
+  --sv-teal-hover: #0F665D;
   
   /* Status & Semantic Colors */
   --sv-success: #10B981;
@@ -43,9 +47,9 @@
   --sv-info-soft: #F0F9FF;
   
   /* UI Elements */
-  --sv-border: #E2E8F0;
-  --sv-border-light: #F1F5F9;
-  --sv-divider: #E8EAED;
+  --sv-border: #D9E2DE;
+  --sv-border-light: #EBF0ED;
+  --sv-divider: #DDE6E1;
   --sv-offline-bg: #FEF9E7;
   
   /* Typography */
@@ -57,17 +61,17 @@
   /* Spacing & Sizing */
   --sv-radius-xs: 4px;
   --sv-radius-sm: 8px;
-  --sv-radius-md: 12px;
-  --sv-radius-lg: 16px;
-  --sv-radius-xl: 20px;
+  --sv-radius-md: 10px;
+  --sv-radius-lg: 12px;
+  --sv-radius-xl: 16px;
   --sv-radius-full: 999px;
   
   /* Shadows - Professional depth */
   --sv-shadow-xs: 0 1px 2px rgba(15, 20, 25, 0.04);
-  --sv-shadow-sm: 0 1px 3px rgba(15, 20, 25, 0.08);
-  --sv-shadow-md: 0 4px 6px rgba(15, 20, 25, 0.1);
-  --sv-shadow-lg: 0 10px 15px rgba(15, 20, 25, 0.15);
-  --sv-shadow-xl: 0 20px 25px rgba(15, 20, 25, 0.2);
+  --sv-shadow-sm: 0 2px 8px rgba(17, 24, 29, 0.06);
+  --sv-shadow-md: 0 8px 22px rgba(17, 24, 29, 0.08);
+  --sv-shadow-lg: 0 18px 42px rgba(17, 24, 29, 0.14);
+  --sv-shadow-xl: 0 28px 70px rgba(17, 24, 29, 0.22);
   
   /* Transitions */
   --sv-transition-fast: 150ms ease-out;
@@ -89,6 +93,10 @@
   --sv-ink-secondary: #CBD5E1;
   --sv-muted: #94A3B8;
   --sv-muted-light: #64748B;
+  --sv-text: var(--sv-ink);
+  --sv-card: var(--sv-surface);
+  --sv-primary: var(--sv-teal);
+  --sv-primary-soft: var(--sv-teal-soft);
   
   --sv-brass: #D4915C;
   --sv-brass-dark: #8B5A1F;

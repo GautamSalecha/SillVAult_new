@@ -161,13 +161,16 @@ export default function KnowledgeReview() {
   });
 
   return (
-    <div style={{ padding: '24px 32px', maxWidth: reviewTab === 'interviews' ? 1180 : 780 }}>
-      <p style={{ fontFamily: 'var(--sv-font-display)', fontWeight: 600, fontSize: 20, color: 'var(--sv-ink)' }}>Knowledge review</p>
-      <p style={{ fontSize: 13, color: 'var(--sv-muted)', marginBottom: 16 }}>
-        Review pending tips, or drill into a tacit knowledge interview turn by turn — one machine at a time.
-      </p>
+    <div className="sv-premium-page sv-review-page" style={{ maxWidth: reviewTab === 'interviews' ? 1180 : 860 }}>
+      <div className="sv-premium-hero">
+        <div>
+          <span className="sv-kicker"><Sparkles size={14} /> Knowledge quality</span>
+          <h1>Approve only the knowledge you would trust on the floor.</h1>
+          <p>Review worker tips, video context, and interview sessions machine by machine before they become searchable.</p>
+        </div>
+      </div>
 
-      <div style={{ display: 'flex', gap: 4, marginBottom: 16, borderBottom: '1px solid var(--sv-border)' }}>
+      <div className="sv-tab-strip">
         {[
           { key: 'tips', label: 'Tips', icon: ListChecks },
           { key: 'interviews', label: 'Interviews', icon: Sparkles },
@@ -187,7 +190,7 @@ export default function KnowledgeReview() {
         ))}
       </div>
 
-      <div style={{ display: 'flex', gap: 8, marginBottom: 16, flexWrap: 'wrap' }}>
+      <div className="sv-review-toolbar">
         <select
           value={machine}
           onChange={(e) => setMachine(e.target.value)}
@@ -223,17 +226,19 @@ export default function KnowledgeReview() {
 
       {entries === null && <p style={{ fontSize: 13, color: 'var(--sv-muted)' }}>Loading…</p>}
       {entries?.length === 0 && (
-        <div className="sv-card" style={{ textAlign: 'center', padding: '40px 24px', color: 'var(--sv-muted)' }}>
-          Nothing pending for {machine}.
+        <div className="sv-state-card sv-state-card--empty">
+          <ListChecks size={32} />
+          <h3>Nothing pending</h3>
+          <p>There are no tips waiting for review on {machine}.</p>
         </div>
       )}
 
-      <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+      <div className="sv-review-list">
         {filtered.map((entry) => {
           const editing = editingId === entry.id;
           const saving = savingId === entry.id;
           return (
-            <div key={entry.id} className="sv-card">
+            <div key={entry.id} className="sv-review-card">
               <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 10 }}>
                 <span style={{ fontSize: 11, fontFamily: 'var(--sv-font-mono)', fontWeight: 600, padding: '2px 8px', borderRadius: 4, background: 'var(--sv-bg)', color: 'var(--sv-muted)' }}>
                   {machine}

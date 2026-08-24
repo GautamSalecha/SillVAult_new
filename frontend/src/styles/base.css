@@ -26,12 +26,14 @@ html {
 }
 
 body {
-  background: var(--sv-bg);
+  background:
+    linear-gradient(180deg, rgba(16, 185, 129, 0.04), transparent 240px),
+    var(--sv-bg);
   color: var(--sv-ink);
   font-family: var(--sv-font-body);
   font-size: 14px;
   line-height: 1.5;
-  letter-spacing: -0.003em;
+  letter-spacing: 0;
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
   text-rendering: optimizeLegibility;
@@ -47,7 +49,7 @@ h1, h2, h3, h4, h5, h6 {
   font-family: var(--sv-font-display);
   font-weight: 600;
   line-height: 1.2;
-  letter-spacing: -0.02em;
+  letter-spacing: 0;
   color: var(--sv-ink);
 }
 

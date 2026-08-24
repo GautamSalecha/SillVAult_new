@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { Check, X, UserCheck } from 'lucide-react';
+import { Check, X, UserCheck, UsersRound } from 'lucide-react';
 import { Api } from '../../lib/api';
 import { useToast } from '../../lib/toast';
 
@@ -43,32 +43,46 @@ export default function PendingWorkers() {
   }
 
   return (
-    <div style={{ padding: '24px 32px', maxWidth: 720 }}>
-      <p style={{ fontFamily: 'var(--sv-font-display)', fontWeight: 600, fontSize: 20, color: 'var(--sv-ink)' }}>Pending workers</p>
-      <p style={{ fontSize: 13, color: 'var(--sv-muted)', marginBottom: 20 }}>New registrations waiting for approval.</p>
+    <div className="sv-premium-page sv-admin-queue-page">
+      <div className="sv-premium-hero">
+        <div>
+          <span className="sv-kicker"><UsersRound size={14} /> Access control</span>
+          <h1>Approve the right people before they reach the floor.</h1>
+          <p>Review worker registrations with contact context and keep SkillVault access clean.</p>
+        </div>
+        <div className="sv-hero-metrics">
+          <span><strong>{workers?.length ?? '-'}</strong> Waiting</span>
+        </div>
+      </div>
 
-      {workers === null && <p style={{ fontSize: 13, color: 'var(--sv-muted)' }}>Loading…</p>}
-
-      {workers?.length === 0 && (
-        <div className="sv-card" style={{ textAlign: 'center', padding: '48px 24px', color: 'var(--sv-muted)' }}>
-          <UserCheck size={28} style={{ marginBottom: 12, opacity: 0.6 }} />
-          <p style={{ fontSize: 14 }}>No pending registrations right now.</p>
+      {workers === null && (
+        <div className="sv-state-card">
+          <span className="sv-loader-dot" />
+          <p>Loading…</p>
         </div>
       )}
 
-      <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+      {workers?.length === 0 && (
+        <div className="sv-state-card sv-state-card--empty">
+          <UserCheck size={32} />
+          <h3>No pending registrations</h3>
+          <p>Every current worker account has already been reviewed.</p>
+        </div>
+      )}
+
+      <div className="sv-approval-list">
         {workers?.map((w) => (
-          <div key={w.worker_id} className="sv-card" style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+          <div key={w.worker_id} className="sv-approval-card">
             <div>
-              <p style={{ fontSize: 14, fontWeight: 500, color: 'var(--sv-ink)' }}>{w.name}</p>
-              <p style={{ fontSize: 12, fontFamily: 'var(--sv-font-mono)', color: 'var(--sv-muted)' }}>{w.worker_id}</p>
+              <h3>{w.name}</h3>
+              <p className="sv-mono-line">{w.worker_id}</p>
               {(w.phone || w.address) && (
-                <p style={{ fontSize: 12, color: 'var(--sv-muted)', marginTop: 2 }}>
+                <p className="sv-muted-line">
                   {[w.phone, w.address].filter(Boolean).join(' · ')}
                 </p>
               )}
             </div>
-            <div style={{ display: 'flex', gap: 8 }}>
+            <div className="sv-action-row">
               <button className="sv-btn sv-btn--teal" disabled={busyId === w.worker_id} onClick={() => approve(w.worker_id)}>
                 <Check size={14} /> Approve
               </button>

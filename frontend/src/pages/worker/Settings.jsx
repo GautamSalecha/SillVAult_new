@@ -30,10 +30,14 @@ export default function Settings() {
   }
 
   return (
-    <div style={{ maxWidth: 480, margin: '0 auto', padding: 24 }}>
-      <p style={{ fontFamily: 'var(--sv-font-display)', fontWeight: 600, fontSize: 20, color: 'var(--sv-ink)', marginBottom: 24 }}>
-        {t('settingsTitle')}
-      </p>
+    <div className="sv-premium-page sv-settings-page">
+      <div className="sv-premium-hero sv-premium-hero--worker">
+        <div>
+          <span className="sv-kicker"><Sun size={14} /> Personal console</span>
+          <h1>{t('settingsTitle')}</h1>
+          <p>Control identity, language, theme, and account preferences from one polished workspace.</p>
+        </div>
+      </div>
 
       <div className="sv-card" style={{ marginBottom: 16 }}>
         <p style={{ fontSize: 12, fontWeight: 600, color: 'var(--sv-muted)', marginBottom: 4 }}>{t('signedInAs')}</p>

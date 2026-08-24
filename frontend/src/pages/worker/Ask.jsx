@@ -28,6 +28,7 @@ export default function Ask() {
   // Carries forward as the default for typed follow-ups in the same
   // session, since a worker rarely switches language mid-conversation.
   const [detectedLang, setDetectedLang] = useState(DEFAULT_LANG);
+  const [liveCaption, setLiveCaption] = useState('');
   const { recording, busy: transcribing, start, stop } = useVoiceRecorder();
 
   useEffect(() => {
@@ -70,17 +71,29 @@ export default function Ask() {
       stop();
       return;
     }
+    setLiveCaption('');
     start(
       ({ transcript, language_code }) => {
+        setLiveCaption('');
         if (language_code) setDetectedLang(language_code);
         submitQuestion(transcript, language_code);
       },
-      (err) => push(err || t('micError'), 'error'),
+      (err) => {
+        setLiveCaption('');
+        push(err || t('micError'), 'error');
+      },
+      (caption) => setLiveCaption(caption),
     );
   }
 
+  function handleComposerKeyDown(e) {
+    if (e.key !== 'Enter' || e.shiftKey) return;
+    e.preventDefault();
+    submitQuestion(question, detectedLang);
+  }
+
   return (
-    <div style={{ maxWidth: 680, margin: '0 auto', padding: '24px 24px 32px', height: '100%', display: 'flex', flexDirection: 'column' }}>
+    <div className="sv-ask-page">
       {/* Header */}
       <div style={{ marginBottom: 16 }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
@@ -99,19 +112,7 @@ export default function Ask() {
       </div>
 
       {/* Chat panel — one bordered surface holds messages + input */}
-      <div
-        style={{
-          flex: 1,
-          display: 'flex',
-          flexDirection: 'column',
-          minHeight: 0,
-          background: 'var(--sv-surface)',
-          border: '1px solid var(--sv-border)',
-          borderRadius: 'var(--sv-radius-lg)',
-          boxShadow: 'var(--sv-shadow-md)',
-          overflow: 'hidden',
-        }}
-      >
+      <div className="sv-chat-shell">
         <div
           ref={scrollRef}
           style={{
@@ -202,6 +203,12 @@ export default function Ask() {
               </div>
             </div>
           )}
+          {recording && (
+            <div className="sv-live-caption" aria-live="polite">
+              <Mic size={14} />
+              <span>{liveCaption || 'Listening... speak your full question, then tap the mic to send.'}</span>
+            </div>
+          )}
         </div>
 
         {/* Input bar */}
@@ -212,15 +219,18 @@ export default function Ask() {
             padding: 12, borderTop: '1px solid var(--sv-border)', background: 'var(--sv-surface)',
           }}
         >
-          <input
+          <textarea
+            rows={1}
             style={{
-              flex: 1, border: '1px solid var(--sv-border)', borderRadius: 'var(--sv-radius-full)',
-              outline: 'none', fontSize: 14, background: 'var(--sv-bg)', padding: '10px 16px',
+              flex: 1, minHeight: 44, maxHeight: 112, border: '1px solid var(--sv-border)', borderRadius: 16,
+              outline: 'none', fontSize: 14, background: 'var(--sv-bg)', padding: '11px 14px',
               color: 'var(--sv-ink)',
+              resize: 'none',
             }}
             placeholder={machine ? t('askPlaceholder', { machine }) : t('selectMachineFirst')}
             value={question}
             onChange={(e) => setQuestion(e.target.value)}
+            onKeyDown={handleComposerKeyDown}
             disabled={!machine}
           />
           <button

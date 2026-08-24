@@ -79,11 +79,16 @@ export default function Manuals() {
   }
 
   return (
-    <div style={{ padding: '24px 32px', maxWidth: 640 }}>
-      <p style={{ fontFamily: 'var(--sv-font-display)', fontWeight: 600, fontSize: 20, color: 'var(--sv-ink)' }}>Manuals</p>
-      <p style={{ fontSize: 13, color: 'var(--sv-muted)', marginBottom: 20 }}>Upload and manage manuals per machine.</p>
+    <div className="sv-premium-page sv-manuals-page">
+      <div className="sv-premium-hero">
+        <div>
+          <span className="sv-kicker"><FileText size={14} /> Manual intelligence</span>
+          <h1>Build the knowledge base machine by machine.</h1>
+          <p>Upload manuals, create new machine libraries, and keep the AI grounded in verified documentation.</p>
+        </div>
+      </div>
 
-      <div style={{ display: 'flex', gap: 8, marginBottom: 16 }}>
+      <div className="sv-segmented-control">
         <button
           onClick={() => setMode('existing')}
           className="sv-btn"
@@ -134,15 +139,11 @@ export default function Manuals() {
       )}
 
       <div
+        className={`sv-upload-zone ${dragOver ? 'sv-upload-zone--active' : ''}`}
         onDragOver={(e) => { e.preventDefault(); setDragOver(true); }}
         onDragLeave={() => setDragOver(false)}
         onDrop={(e) => { e.preventDefault(); setDragOver(false); handleFiles(e.dataTransfer.files); }}
         onClick={() => fileInputRef.current?.click()}
-        style={{
-          border: `2px dashed ${dragOver ? 'var(--sv-brass)' : 'var(--sv-border)'}`, borderRadius: 'var(--sv-radius-lg)',
-          padding: 32, textAlign: 'center', cursor: 'pointer', marginBottom: 24,
-          background: dragOver ? 'var(--sv-brass-soft)' : 'var(--sv-surface)',
-        }}
       >
         <input ref={fileInputRef} type="file" accept="application/pdf" hidden onChange={(e) => handleFiles(e.target.files)} />
         <Upload size={24} style={{ color: 'var(--sv-brass)', marginBottom: 8 }} />
@@ -161,7 +162,7 @@ export default function Manuals() {
           {manuals?.length === 0 && <p style={{ fontSize: 13, color: 'var(--sv-muted)' }}>No manuals uploaded for {machine} yet.</p>}
           <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
             {manuals?.map((m) => (
-              <div key={m.filename} className="sv-card" style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+              <div key={m.filename} className="sv-manual-row">
                 <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
                   <FileText size={16} color="var(--sv-muted)" />
                   <div>

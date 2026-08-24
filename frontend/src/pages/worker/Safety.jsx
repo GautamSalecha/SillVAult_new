@@ -94,21 +94,14 @@ export default function Safety() {
   }, []);
 
   return (
-    <div style={{ maxWidth: 680, margin: '0 auto', padding: '24px 24px 32px' }}>
-      <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 4 }}>
-        <div style={{
-          width: 36, height: 36, borderRadius: 'var(--sv-radius-md)', background: 'var(--sv-brass-soft)',
-          display: 'flex', alignItems: 'center', justifyContent: 'center',
-        }}>
-          <ShieldCheck size={18} color="var(--sv-brass)" />
+    <div className="sv-premium-page sv-worker-premium-page">
+      <div className="sv-premium-hero sv-premium-hero--worker">
+        <div>
+          <span className="sv-kicker"><ShieldCheck size={14} /> Machine safety</span>
+          <h1>{t('safetyTitle')}</h1>
+          <p>{t('safetySubtitle')}</p>
         </div>
-        <p style={{ fontFamily: 'var(--sv-font-display)', fontWeight: 600, fontSize: 20, color: 'var(--sv-ink)', margin: 0 }}>
-          {t('safetyTitle')}
-        </p>
       </div>
-      <p style={{ fontSize: 13, color: 'var(--sv-muted)', marginBottom: 22 }}>
-        {t('safetySubtitle')}
-      </p>
 
       {machines === null && !error && (
         <div className="sv-card" style={{ textAlign: 'center', padding: '48px 24px', color: 'var(--sv-muted)' }}>

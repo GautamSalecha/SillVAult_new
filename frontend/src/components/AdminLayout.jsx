@@ -1,5 +1,5 @@
 import { NavLink, Outlet, useNavigate } from 'react-router-dom';
-import { LogOut, Moon, Sun, Globe } from 'lucide-react';
+import { BarChart3, BookOpenText, ClipboardList, FileText, Gauge, LogOut, Moon, ShieldCheck, Sun, Globe, UserRoundCog, UsersRound } from 'lucide-react';
 import { useState } from 'react';
 import Wordmark from './Wordmark';
 import { clearAdminSession } from '../lib/auth';
@@ -13,14 +13,15 @@ export default function AdminLayout() {
   const [showLanguages, setShowLanguages] = useState(false);
 
   const NAV = [
-    { to: '/admin/pending-workers', label: t('admin') + ' - Pending workers' },
-    { to: '/admin/workers-machines', label: 'Workers & machines' },
-    { to: '/admin/knowledge-review', label: 'Knowledge review' },
-    { to: '/admin/tickets', label: 'Tickets' },          // ← add this
-    { to: '/admin/safety-measures', label: 'Safety measures' },
-    { to: '/admin/analytics', label: 'Analytics' },
-    { to: '/admin/manuals', label: 'Manuals' },
-    { to: '/admin/profile', label: 'Profile' },
+    { to: '/admin/dashboard', label: 'Command', icon: Gauge },
+    { to: '/admin/pending-workers', label: 'Approvals', icon: UsersRound },
+    { to: '/admin/workers-machines', label: 'Workforce', icon: UserRoundCog },
+    { to: '/admin/knowledge-review', label: 'Knowledge', icon: BookOpenText },
+    { to: '/admin/tickets', label: 'Tickets', icon: ClipboardList },
+    { to: '/admin/safety-measures', label: 'Safety', icon: ShieldCheck },
+    { to: '/admin/analytics', label: 'Analytics', icon: BarChart3 },
+    { to: '/admin/manuals', label: 'Manuals', icon: FileText },
+    { to: '/admin/profile', label: 'Profile', icon: UserRoundCog },
   ];
 
   function toggleTheme() {
@@ -35,53 +36,27 @@ export default function AdminLayout() {
   }
 
   return (
-    <div style={{ height: '100%', display: 'flex', background: 'var(--sv-bg)' }}>
-      <div
-        style={{
-          width: 224,
-          flexShrink: 0,
-          padding: '24px 16px',
-          display: 'flex',
-          flexDirection: 'column',
-          gap: 4,
-          background: 'var(--sv-surface)',
-          borderRight: '1px solid var(--sv-border)',
-          boxShadow: '1px 0 3px rgba(0,0,0,0.05)',
-          overflowY: 'auto',
-        }}
-      >
-        <div style={{ marginBottom: 24 }}><Wordmark size={15} /></div>
-        {NAV.map((item) => (
+    <div className="sv-admin-shell">
+      <aside className="sv-admin-sidebar">
+        <div className="sv-admin-sidebar__brand"><Wordmark size={16} /></div>
+        <nav className="sv-admin-sidebar__nav" aria-label="Admin navigation">
+        {NAV.map((item) => {
+          const Icon = item.icon;
+          return (
           <NavLink
             key={item.to}
             to={item.to}
-            style={({ isActive }) => ({
-              padding: '10px 12px',
-              borderRadius: 'var(--sv-radius-sm)',
-              fontSize: 13,
-              fontWeight: 500,
-              background: isActive ? 'var(--sv-brass-soft)' : 'transparent',
-              color: isActive ? 'var(--sv-brass)' : 'var(--sv-muted)',
-              textDecoration: 'none',
-              transition: 'all var(--sv-transition-fast)',
-              cursor: 'pointer',
-            })}
-            onMouseEnter={(e) => {
-              if (!e.currentTarget.classList.contains('active')) {
-                e.currentTarget.style.background = 'var(--sv-bg-secondary)';
-              }
-            }}
-            onMouseLeave={(e) => {
-              if (!e.currentTarget.classList.contains('active')) {
-                e.currentTarget.style.background = 'transparent';
-              }
-            }}
+            end={item.end}
+            className={({ isActive }) => `sv-admin-nav-item${isActive ? ' sv-admin-nav-item--active' : ''}`}
           >
+            <Icon size={17} />
             {item.label}
           </NavLink>
-        ))}
+          );
+        })}
+        </nav>
 
-        <div style={{ flex: 1 }} />
+        <div className="sv-admin-sidebar__spacer" />
 
         {/* Language Selector */}
         <div style={{ position: 'relative', marginBottom: 4 }}>
@@ -199,10 +174,10 @@ export default function AdminLayout() {
         >
           <LogOut size={16} /> {t('logout')}
         </button>
-      </div>
-      <div style={{ flex: 1, overflow: 'auto', display: 'flex', flexDirection: 'column' }}>
+      </aside>
+      <main className="sv-admin-main">
         <Outlet />
-      </div>
+      </main>
     </div>
   );
 }

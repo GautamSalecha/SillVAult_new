@@ -7,12 +7,14 @@ import { WorkerSessionProvider } from '../lib/workerSession';
 export default function WorkerLayout() {
   return (
     <WorkerSessionProvider>
-      <div style={{ height: '100%', display: 'flex', flexDirection: 'column', background: 'var(--sv-bg)' }}>
-        <TopBar workerName={getWorkerName()} />
-        <div style={{ flex: 1, overflow: 'auto' }}>
-          <Outlet />
-        </div>
+      <div className="sv-worker-shell">
         <WorkerNav />
+        <div className="sv-worker-stage">
+          <TopBar workerName={getWorkerName()} />
+          <div className="sv-worker-content">
+            <Outlet />
+          </div>
+        </div>
       </div>
     </WorkerSessionProvider>
   );

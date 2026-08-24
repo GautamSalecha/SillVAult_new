@@ -1,6 +1,5 @@
 import { Link } from 'react-router-dom';
-import { Bell, WifiOff } from 'lucide-react';
-import Wordmark from './Wordmark';
+import { Bell, Sparkles, WifiOff } from 'lucide-react';
 
 function initials(name) {
   if (!name) return '?';
@@ -31,7 +30,10 @@ export default function TopBar({ workerName, offline = false, queuedCount = 0 })
         </div>
       )}
       <div className="sv-topbar__row">
-        <Wordmark size={16} />
+        <div className="sv-topbar__status">
+          <Sparkles size={15} />
+          <span>Live floor intelligence</span>
+        </div>
         <div className="sv-topbar__actions">
           <Link to="/worker/notifications" aria-label="Notifications"><Bell size={18} /></Link>
           <Link to="/worker/settings" className="sv-topbar__avatar" aria-label="Settings">{initials(workerName)}</Link>

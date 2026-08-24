@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { Inbox, Clock, CheckCircle2 } from 'lucide-react';
+import { Inbox, Clock, CheckCircle2, Lightbulb } from 'lucide-react';
 import { Api } from '../../lib/api';
 import { useToast } from '../../lib/toast';
 import { useI18n } from '../../lib/i18n';
@@ -36,39 +36,45 @@ export default function MyTips() {
   }, []);
 
   return (
-    <div style={{ maxWidth: 640, margin: '0 auto', padding: 24 }}>
-      <p style={{ fontFamily: 'var(--sv-font-display)', fontWeight: 600, fontSize: 20, color: 'var(--sv-ink)' }}>
-        {t('myTipsTitle')}
-      </p>
-      <p style={{ fontSize: 13, color: 'var(--sv-muted)', marginBottom: 24 }}>
-        {t('myTipsSubtitle')}
-      </p>
+    <div className="sv-premium-page sv-knowledge-page">
+      <div className="sv-premium-hero sv-premium-hero--worker">
+        <div>
+          <span className="sv-kicker"><Lightbulb size={14} /> Worker knowledge</span>
+          <h1>{t('myTipsTitle')}</h1>
+          <p>{t('myTipsSubtitle')}</p>
+        </div>
+        <div className="sv-hero-metrics">
+          <span><strong>{tips.length}</strong> Submitted</span>
+          <span><strong>{tips.filter((tip) => tip.status === 'approved').length}</strong> Approved</span>
+        </div>
+      </div>
 
       {loading ? (
-        <div className="sv-card" style={{ textAlign: 'center', padding: '48px 24px', color: 'var(--sv-muted)' }}>
-          <p style={{ fontSize: 13 }}>{t('loading') || 'Loading…'}</p>
+        <div className="sv-state-card">
+          <span className="sv-loader-dot" />
+          <p>{t('loading') || 'Loading…'}</p>
         </div>
       ) : tips.length === 0 ? (
-        <div className="sv-card" style={{ textAlign: 'center', padding: '48px 24px', color: 'var(--sv-muted)' }}>
-          <Inbox size={28} style={{ marginBottom: 12, opacity: 0.6 }} />
-          <p style={{ fontSize: 14, fontWeight: 500, color: 'var(--sv-ink)', marginBottom: 6 }}>
+        <div className="sv-state-card sv-state-card--empty">
+          <Inbox size={32} />
+          <h3>
             {t('myTipsEmptyTitle') || "You haven't submitted any tips yet"}
-          </p>
-          <p style={{ fontSize: 13, maxWidth: 360, margin: '0 auto' }}>
-            {t('myTipsEmptyBody') || 'Tips you add from the Add Tip page will show up here once submitted.'}
+          </h3>
+          <p>
+            {t('myTipsEmptyBody') || 'Tips you create in the Knowledge Hub will show up here once submitted.'}
           </p>
         </div>
       ) : (
-        <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+        <div className="sv-knowledge-grid">
           {tips.map((tip) => (
-            <div key={tip.id} className="sv-card" style={{ padding: 16 }}>
-              <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: 10, marginBottom: 8 }}>
-                <span style={{ fontSize: 12, fontWeight: 600, color: 'var(--sv-muted)', textTransform: 'uppercase', letterSpacing: 0.4 }}>
+            <div key={tip.id} className="sv-knowledge-card">
+              <div className="sv-knowledge-card__head">
+                <span>
                   {tip.machine_id}
                 </span>
                 <StatusBadge status={tip.status} />
               </div>
-              <p style={{ fontSize: 14, color: 'var(--sv-ink)', lineHeight: 1.5, margin: 0 }}>
+              <p>
                 {tip.text}
               </p>
             </div>

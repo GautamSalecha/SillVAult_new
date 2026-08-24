@@ -77,7 +77,7 @@ export default function SafetyBriefing() {
   }
 
   return (
-    <div style={{ maxWidth: 640, margin: '0 auto', padding: '20px 24px 32px', display: 'flex', flexDirection: 'column', minHeight: '100%' }}>
+    <div className="sv-premium-page sv-safety-briefing-page">
       {/* Header */}
       <button
         type="button"
@@ -139,6 +139,14 @@ export default function SafetyBriefing() {
       {/* Briefing stepper */}
       {!loading && !loadError && total > 0 && !justCompletedAt && current && (
         <>
+          <div className="sv-premium-hero sv-premium-hero--worker" style={{ marginBottom: 16 }}>
+            <div>
+              <span className="sv-kicker"><ShieldCheck size={14} /> Safety briefing</span>
+              <h1>{machineId}</h1>
+              <p>{t('safetyStepOf', { current: step + 1, total })}</p>
+            </div>
+          </div>
+
           <div style={{ marginBottom: 16 }}>
             <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 8 }}>
               <p style={{ fontFamily: 'var(--sv-font-display)', fontWeight: 600, fontSize: 18, color: 'var(--sv-ink)', margin: 0 }}>

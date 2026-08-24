@@ -1,4 +1,4 @@
-import { BellOff } from 'lucide-react';
+import { BellOff, RadioTower } from 'lucide-react';
 
 /**
  * Scope for notifications was explicitly left open in the handoff
@@ -7,16 +7,19 @@ import { BellOff } from 'lucide-react';
  */
 export default function Notifications() {
   return (
-    <div style={{ maxWidth: 640, margin: '0 auto', padding: 24 }}>
-      <p style={{ fontFamily: 'var(--sv-font-display)', fontWeight: 600, fontSize: 20, color: 'var(--sv-ink)' }}>Notifications</p>
-      <p style={{ fontSize: 13, color: 'var(--sv-muted)', marginBottom: 24 }}>
-        Nothing here yet.
-      </p>
-      <div className="sv-card" style={{ textAlign: 'center', padding: '48px 24px', color: 'var(--sv-muted)' }}>
-        <BellOff size={28} style={{ marginBottom: 12, opacity: 0.6 }} />
-        <p style={{ fontSize: 13, maxWidth: 320, margin: '0 auto' }}>
-          Notifications haven't been scoped yet for SkillVault — what should trigger one
-          (a tip approved, a tip rejected, a new manual) is still an open decision.
+    <div className="sv-premium-page sv-notifications-page">
+      <div className="sv-premium-hero sv-premium-hero--worker">
+        <div>
+          <span className="sv-kicker"><RadioTower size={14} /> Signal center</span>
+          <h1>Notifications</h1>
+          <p>Approvals, safety updates, and work alerts will land here when the backend event stream is added.</p>
+        </div>
+      </div>
+      <div className="sv-state-card sv-state-card--empty">
+        <BellOff size={32} />
+        <h3>No live alerts yet</h3>
+        <p>
+          SkillVault has the space ready; the backend still needs notification events before this can show real alerts.
         </p>
       </div>
     </div>

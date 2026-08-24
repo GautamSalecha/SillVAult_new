@@ -60,7 +60,7 @@ function MeasureForm({ initial, onCancel, onSubmit, saving }) {
   }
 
   return (
-    <div className="sv-card" style={{ padding: 18, marginBottom: 14, border: '1px solid var(--sv-brass)' }}>
+    <div className="sv-lux-form sv-safety-form">
       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 12 }}>
         <p style={{ fontSize: 13, fontWeight: 700, color: 'var(--sv-brass)', margin: 0 }}>
           {initial?.id ? 'Edit safety measure' : 'New safety measure'}
@@ -74,6 +74,7 @@ function MeasureForm({ initial, onCancel, onSubmit, saving }) {
         Title
       </label>
       <input
+        className="sv-field-input"
         value={form.title}
         onChange={(e) => setForm((f) => ({ ...f, title: e.target.value }))}
         placeholder="e.g. Lock out the power supply before opening the guard"
@@ -87,6 +88,7 @@ function MeasureForm({ initial, onCancel, onSubmit, saving }) {
         Instructions (what the worker will read / hear)
       </label>
       <textarea
+        className="sv-field-input"
         value={form.content}
         onChange={(e) => setForm((f) => ({ ...f, content: e.target.value }))}
         placeholder="Step-by-step detail — this is what gets read aloud too, so write it the way you'd say it out loud."
@@ -104,6 +106,7 @@ function MeasureForm({ initial, onCancel, onSubmit, saving }) {
             Audio language
           </label>
           <select
+            className="sv-field-input"
             value={form.language_code}
             onChange={(e) => setForm((f) => ({ ...f, language_code: e.target.value }))}
             style={{
@@ -217,7 +220,7 @@ function CompletionsPanel({ machineId, onClose }) {
   }
 
   return (
-    <div className="sv-card" style={{ padding: 18, marginBottom: 14 }}>
+    <div className="sv-lux-form sv-completions-panel">
       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 12 }}>
         <p style={{ fontSize: 13, fontWeight: 700, color: 'var(--sv-ink)', margin: 0, display: 'flex', alignItems: 'center', gap: 6 }}>
           <Users size={14} /> Who has completed this briefing
@@ -231,7 +234,7 @@ function CompletionsPanel({ machineId, onClose }) {
       {rows && rows.length > 0 && (
         <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
           {rows.map((r) => (
-            <div key={r.worker_id} style={{
+            <div key={r.worker_id} className="sv-completion-row" style={{
               display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 10, fontSize: 13,
               padding: '8px 10px', borderRadius: 'var(--sv-radius-sm)', background: 'var(--sv-bg)', flexWrap: 'wrap',
             }}>
@@ -309,7 +312,7 @@ function MeasureVideo({ measure, onChanged }) {
   }
 
   return (
-    <div style={{ marginTop: 8, display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
+    <div className="sv-measure-video">
       <input
         ref={inputRef}
         type="file"
@@ -464,15 +467,20 @@ export default function SafetyMeasures() {
   }
 
   return (
-    <div style={{ padding: '24px 32px', maxWidth: 720 }}>
-      <p style={{ fontFamily: 'var(--sv-font-display)', fontWeight: 600, fontSize: 20, color: 'var(--sv-ink)', display: 'flex', alignItems: 'center', gap: 8 }}>
-        <ShieldCheck size={20} color="var(--sv-brass)" /> Safety measures
-      </p>
-      <p style={{ fontSize: 13, color: 'var(--sv-muted)', marginBottom: 20 }}>
-        Ordered safety steps workers go through — in text and audio — before starting work on a machine.
-      </p>
+    <div className="sv-premium-page sv-safety-admin-page">
+      <div className="sv-premium-hero">
+        <div>
+          <span className="sv-kicker"><ShieldCheck size={14} /> Safety governance</span>
+          <h1>Safety measures workers can read, hear, and trust.</h1>
+          <p>Build ordered briefings with video support, completion tracking, retakes, and active/inactive control.</p>
+        </div>
+        <div className="sv-hero-metrics">
+          <span><strong>{measures?.length ?? '-'}</strong> Steps</span>
+          <span><strong>{measures?.filter((m) => m.is_active).length ?? '-'}</strong> Active</span>
+        </div>
+      </div>
 
-      <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 20, flexWrap: 'wrap' }}>
+      <div className="sv-review-toolbar">
         <select
           value={machine}
           onChange={(e) => setMachine(e.target.value)}
@@ -524,16 +532,25 @@ export default function SafetyMeasures() {
         <CompletionsPanel machineId={machine} onClose={() => setShowCompletions(false)} />
       )}
 
-      {measures === null && <p style={{ fontSize: 13, color: 'var(--sv-muted)' }}>Loading…</p>}
+      {measures === null && (
+        <div className="sv-state-card">
+          <span className="sv-loader-dot" />
+          <p>Loading…</p>
+        </div>
+      )}
       {measures?.length === 0 && (
-        <p style={{ fontSize: 13, color: 'var(--sv-muted)' }}>No safety measures added for {machine} yet.</p>
+        <div className="sv-state-card sv-state-card--empty">
+          <ShieldCheck size={32} />
+          <h3>No safety measures yet</h3>
+          <p>Add the first briefing step for {machine} to unlock worker safety completion.</p>
+        </div>
       )}
 
-      <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+      <div className="sv-safety-measure-list">
         {measures?.map((m, i) => (
           <div
             key={m.id}
-            className="sv-card"
+            className="sv-safety-measure-card"
             style={{
               display: 'flex', alignItems: 'flex-start', gap: 12, padding: 14,
               opacity: m.is_active ? 1 : 0.55,

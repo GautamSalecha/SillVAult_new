@@ -1,8 +1,14 @@
-import { useState, useEffect } from 'react';
+import { useEffect, useState } from 'react';
+import { AlertTriangle, CheckCircle2, Gauge, Send, Ticket } from 'lucide-react';
 import { Api } from '../../lib/api';
 import { useToast } from '../../lib/toast';
 import MachineSelect from '../../components/MachineSelect';
-import { Ticket } from 'lucide-react';
+
+const priorities = [
+  { id: 'Low', title: 'Low', note: 'Can wait', icon: CheckCircle2 },
+  { id: 'Medium', title: 'Medium', note: 'Needs planning', icon: Gauge },
+  { id: 'High', title: 'High', note: 'Urgent risk', icon: AlertTriangle },
+];
 
 export default function RaiseTicket() {
   const { push } = useToast();
@@ -13,21 +19,16 @@ export default function RaiseTicket() {
   const [loading, setLoading] = useState(false);
   const [machines, setMachines] = useState([]);
 
-  // Load worker's machines
-// Load worker's machines
-    useEffect(() => {
-        Api.myMachines()
-            .then((data) => {
-            console.log('Machines from API:', data);   // ← this line
-            setMachines(Array.isArray(data) ? data : []);
-            })
-            .catch((err) => {
-            console.error('Failed to load machines:', err);
-            setMachines([]);
-            });
-        }, []);
+  useEffect(() => {
+    Api.myMachines()
+      .then((data) => setMachines(data?.machine_ids || []))
+      .catch((err) => {
+        push(err.message || 'Failed to load machines', 'error');
+        setMachines([]);
+      });
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
-  const handleSubmit = async (e) => {
+  async function handleSubmit(e) {
     e.preventDefault();
     if (!title.trim() || !description.trim()) {
       push('Please fill title and description', 'error');
@@ -52,129 +53,74 @@ export default function RaiseTicket() {
     } finally {
       setLoading(false);
     }
-  };
+  }
 
   return (
-    <div className="page" style={{ maxWidth: 640, margin: '0 auto' }}>
-      <div style={{ marginBottom: 28 }}>
-        <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 8 }}>
-          <div style={{
-            width: 44, height: 44, borderRadius: 12,
-            background: 'var(--sv-primary-soft, #e0f2fe)',
-            display: 'flex', alignItems: 'center', justifyContent: 'center'
-          }}>
-            <Ticket size={22} color="var(--sv-primary, #0284c7)" />
-          </div>
-          <div>
-            <h1 style={{ margin: 0, fontSize: 24 }}>Raise a Ticket</h1>
-            <p style={{ margin: 0, color: 'var(--sv-muted)', fontSize: 14 }}>
-              Report a problem or request help
-            </p>
-          </div>
+    <div className="sv-premium-page sv-ticket-page">
+      <div className="sv-premium-hero sv-premium-hero--worker">
+        <div>
+          <span className="sv-kicker"><Ticket size={14} /> Work request</span>
+          <h1>Raise the right signal fast.</h1>
+          <p>Capture machine issues with enough clarity for maintenance to act without a long back-and-forth.</p>
         </div>
       </div>
 
-      <form onSubmit={handleSubmit} className="card" style={{ padding: 24 }}>
-        <div style={{ marginBottom: 20 }}>
-          <label style={{ display: 'block', fontWeight: 600, marginBottom: 6, fontSize: 14 }}>
-            What is the issue?
+      <form onSubmit={handleSubmit} className="sv-lux-form">
+        <section className="sv-lux-form__main">
+          <label className="sv-field">
+            <span>Issue title</span>
+            <input
+              value={title}
+              onChange={(e) => setTitle(e.target.value)}
+              placeholder="Machine making unusual noise"
+              required
+            />
           </label>
-          <input
-            value={title}
-            onChange={(e) => setTitle(e.target.value)}
-            placeholder="e.g. Machine making unusual noise"
-            required
-            style={{
-              width: '100%',
-              padding: '12px 14px',
-              borderRadius: 10,
-              border: '1px solid var(--sv-border, #e2e8f0)',
-              fontSize: 15,
-            }}
-          />
-        </div>
 
-        <div style={{ marginBottom: 20 }}>
-          <label style={{ display: 'block', fontWeight: 600, marginBottom: 6, fontSize: 14 }}>
-            Describe the problem
+          <label className="sv-field">
+            <span>What happened?</span>
+            <textarea
+              value={description}
+              onChange={(e) => setDescription(e.target.value)}
+              placeholder="Mention what changed, when it started, what you already checked, and whether production is affected."
+              rows={7}
+              required
+            />
           </label>
-          <textarea
-            value={description}
-            onChange={(e) => setDescription(e.target.value)}
-            placeholder="Explain what happened, when it started, and any other details..."
-            rows={5}
-            required
-            style={{
-              width: '100%',
-              padding: '12px 14px',
-              borderRadius: 10,
-              border: '1px solid var(--sv-border, #e2e8f0)',
-              fontSize: 15,
-              resize: 'vertical',
-            }}
-          />
-        </div>
 
-        <div style={{ marginBottom: 20 }}>
-          <label style={{ display: 'block', fontWeight: 600, marginBottom: 6, fontSize: 14 }}>
-            Which machine? <span style={{ fontWeight: 400, color: 'var(--sv-muted)' }}>(optional)</span>
-          </label>
-          <MachineSelect
-            value={machineId}
-            onChange={setMachineId}
-            machines={machines}
-          />
-        </div>
-
-        <div style={{ marginBottom: 28 }}>
-          <label style={{ display: 'block', fontWeight: 600, marginBottom: 10, fontSize: 14 }}>
-            How urgent is it?
-          </label>
-          <div style={{ display: 'flex', gap: 10 }}>
-            {['Low', 'Medium', 'High'].map((p) => (
-              <button
-                key={p}
-                type="button"
-                onClick={() => setPriority(p)}
-                style={{
-                  flex: 1,
-                  padding: '12px 8px',
-                  borderRadius: 10,
-                  border: priority === p ? '2px solid' : '1px solid var(--sv-border, #e2e8f0)',
-                  borderColor: priority === p
-                    ? p === 'High' ? '#ef4444' : p === 'Medium' ? '#f59e0b' : '#22c55e'
-                    : undefined,
-                  background: priority === p
-                    ? p === 'High' ? '#fef2f2' : p === 'Medium' ? '#fffbeb' : '#f0fdf4'
-                    : 'transparent',
-                  fontWeight: 600,
-                  fontSize: 14,
-                  cursor: 'pointer',
-                  color: priority === p
-                    ? p === 'High' ? '#b91c1c' : p === 'Medium' ? '#b45309' : '#15803d'
-                    : 'var(--sv-text)',
-                }}
-              >
-                {p}
-              </button>
-            ))}
+          <div className="sv-field">
+            <span>Machine</span>
+            <MachineSelect value={machineId} onChange={setMachineId} machines={machines} />
           </div>
-        </div>
+        </section>
 
-        <button
-          type="submit"
-          className="btn primary"
-          disabled={loading}
-          style={{
-            width: '100%',
-            padding: '14px',
-            fontSize: 16,
-            fontWeight: 600,
-            borderRadius: 12,
-          }}
-        >
-          {loading ? 'Submitting...' : 'Submit Ticket'}
-        </button>
+        <aside className="sv-lux-form__side">
+          <div>
+            <p className="sv-lux-form__eyebrow">Priority</p>
+            <div className="sv-priority-grid">
+              {priorities.map(({ id, title: label, note, icon: Icon }) => (
+                <button
+                  key={id}
+                  type="button"
+                  onClick={() => setPriority(id)}
+                  className={`sv-priority-card sv-priority-card--${id.toLowerCase()}${priority === id ? ' sv-priority-card--active' : ''}`}
+                >
+                  <Icon size={18} />
+                  <strong>{label}</strong>
+                  <span>{note}</span>
+                </button>
+              ))}
+            </div>
+          </div>
+
+          <div className="sv-submit-panel">
+            <strong>Before submitting</strong>
+            <span>Clear issue reports reduce downtime and help admins prioritize work.</span>
+            <button type="submit" className="sv-btn sv-btn--primary sv-btn--lg sv-btn--full" disabled={loading}>
+              <Send size={16} /> {loading ? 'Submitting...' : 'Submit Ticket'}
+            </button>
+          </div>
+        </aside>
       </form>
     </div>
   );
