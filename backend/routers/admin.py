@@ -3,8 +3,10 @@ routers/admin.py
 
 POST   /admin/login                    - admin logs in, gets a token that expires after TOKEN_EXPIRY_HOURS
 GET    /admin/pending                  - admin views knowledge waiting for approval, for one machine
-POST   /admin/approve/{id}             - admin approves a pending knowledge entry
-DELETE /admin/delete/{id}              - admin deletes a knowledge entry (pending or approved)
+GET    /admin/knowledge                - list worker tips by status (pending|approved|rejected)
+POST   /admin/approve/{id}             - admin approves a pending/rejected knowledge entry
+POST   /admin/reject/{id}              - soft-reject a tip (kept for history, not used in Ask)
+DELETE /admin/delete/{id}              - permanently deletes a knowledge entry
 GET    /admin/pending-workers          - admin views worker registrations waiting for approval
 POST   /admin/approve-worker/{id}      - admin approves a worker's account, letting them log in
 DELETE /admin/reject-worker/{id}       - admin rejects/removes a worker's registration entirely
@@ -20,12 +22,28 @@ from sqlalchemy.orm import Session
 from sqlalchemy.exc import IntegrityError
 from rag.embeddings import embed_text_with_retry
 from db import get_db
-from models import AdminSession, AdminProfile, Worker, WorkerSession, WorkerMachine, Ticket, QuestionLog, InterviewSession, SafetyCompletion
-from schemas import AdminLoginRequest, AssignMachineRequest, EditEntryRequest, AdminProfileUpdateRequest, AdminUpdateWorkerRequest
-from auth.security import make_expiry_time
+from models import (
+    Admin, AdminSession, AdminProfile, Worker, WorkerSession, WorkerMachine,
+    Ticket, QuestionLog, InterviewSession, InterviewTurn, SafetyMeasure,
+    SafetyCompletion, PasswordResetRequest, DailyUpdate,
+)
+from schemas import (
+    AdminLoginRequest,
+    AssignMachineRequest,
+    EditEntryRequest,
+    AdminProfileUpdateRequest,
+    AdminUpdateWorkerRequest,
+    AdminSetPasswordRequest,
+    AdminChangePasswordRequest,
+    AdminCreateSupervisorRequest,
+    AdminSetRolesRequest,
+)
+from auth.security import hash_password, verify_password, make_expiry_time
 from auth.admin_auth import require_admin
-from rag.chroma_store import collection , list_manuals, delete_manual , list_all_machine_ids
-from config import ADMIN_USERNAME, ADMIN_PASSWORD, TOKEN_EXPIRY_HOURS
+from auth.admin_accounts import ensure_seed_admin
+from rag.chroma_store import collection, list_manuals, delete_manual, list_all_machine_ids, delete_all_for_machine
+from config import TOKEN_EXPIRY_HOURS
+from mail_util import send_account_approved_email
 
 import tempfile
 import os
@@ -36,58 +54,224 @@ router = APIRouter(prefix="/admin",tags=["Admin"])
 
 @router.post("/login")
 def admin_login(req: AdminLoginRequest, db: Session = Depends(get_db)):
-    if req.username != ADMIN_USERNAME or req.password != ADMIN_PASSWORD:
+    """
+    Supervisor login via unified users + roles (supervisor role required).
+    Seeds first supervisor if none exist; migrates legacy admins/workers into users.
+    """
+    from auth.user_accounts import (
+        seed_first_supervisor_if_empty,
+        authenticate,
+        ROLE_SUPERVISOR,
+        migrate_all_identities,
+    )
+    from auth.admin_accounts import ensure_admin_schema
+
+    ensure_admin_schema(db)
+    seed_first_supervisor_if_empty(db)
+    migrate_all_identities(db)
+    from auth.user_accounts import ensure_at_least_one_owner
+    ensure_at_least_one_owner(db)
+
+    username = (req.username or "").strip()
+    from auth.rate_limit import check_rate_limit
+    check_rate_limit(
+        f"admin_login:{username.lower()}",
+        max_hits=10,
+        window_seconds=300,
+        detail="Too many login attempts. Wait 5 minutes and try again.",
+    )
+    result = authenticate(db, username, req.password)
+    if not result:
         raise HTTPException(status_code=401, detail="Incorrect username or password.")
+    user, roles = result
+    if ROLE_SUPERVISOR not in roles:
+        raise HTTPException(
+            status_code=403,
+            detail="This account is not a supervisor. Use Worker sign-in, or ask an admin to promote you.",
+        )
 
     token = secrets.token_hex(16)
-    session = AdminSession(token=token, expires_at=make_expiry_time())
+    session = AdminSession(
+        token=token,
+        admin_id=user.user_id,
+        expires_at=make_expiry_time(),
+    )
     db.add(session)
     db.commit()
 
-    profile = db.query(AdminProfile).filter(AdminProfile.username == ADMIN_USERNAME).first()
-
     return {
         "token": token,
-        "name": profile.name if profile else None,
+        "name": user.name or user.user_id,
+        "username": user.user_id,
+        "roles": roles,
         "expires_in_hours": TOKEN_EXPIRY_HOURS,
         "message": "Login successful. Use this token in the Authorization header as 'Bearer <token>'.",
     }
 
 
+
+@router.post("/logout")
+def admin_logout(admin: dict = Depends(require_admin), db: Session = Depends(get_db)):
+    """Revoke current admin session token (Sign out)."""
+    tok = admin.get("token")
+    if tok:
+        db.query(AdminSession).filter(AdminSession.token == tok).delete()
+        db.commit()
+    return {"status": "logged_out", "message": "Session ended."}
+
+
+@router.post("/supervisors")
+def create_supervisor_account(
+    req: AdminCreateSupervisorRequest,
+    admin: dict = Depends(require_admin),
+    db: Session = Depends(get_db),
+):
+    """Create a supervisor-only account. Owner role required."""
+    from auth.user_accounts import create_supervisor, user_is_owner, ensure_at_least_one_owner
+    ensure_at_least_one_owner(db)
+    if not user_is_owner(db, admin["admin_id"]):
+        raise HTTPException(
+            status_code=403,
+            detail="Only the plant owner can create new supervisors. Ask the owner account.",
+        )
+    try:
+        return create_supervisor(
+            db,
+            username=req.username,
+            password=req.password,
+            name=req.name,
+        )
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+
+
+@router.put("/workers/{worker_id}/roles")
+def set_worker_roles(
+    worker_id: str,
+    req: AdminSetRolesRequest,
+    admin: dict = Depends(require_admin),
+    db: Session = Depends(get_db),
+):
+    """Owner sets Floor worker / Supervisor checkboxes for one account."""
+    from auth.user_accounts import set_user_roles, user_is_owner, ensure_at_least_one_owner
+    ensure_at_least_one_owner(db)
+    if not user_is_owner(db, admin["admin_id"]):
+        raise HTTPException(
+            status_code=403,
+            detail="Only the plant owner can change worker / supervisor roles.",
+        )
+    try:
+        return set_user_roles(
+            db,
+            worker_id,
+            as_worker=bool(req.as_worker),
+            as_supervisor=bool(req.as_supervisor),
+        )
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+
+
+@router.post("/workers/{worker_id}/promote")
+def promote_worker(
+    worker_id: str,
+    admin: dict = Depends(require_admin),
+    db: Session = Depends(get_db),
+):
+    """Grant supervisor role to an existing worker. Owner only."""
+    from auth.user_accounts import (
+        promote_worker_to_supervisor,
+        user_is_owner,
+        ensure_at_least_one_owner,
+    )
+    ensure_at_least_one_owner(db)
+    if not user_is_owner(db, admin["admin_id"]):
+        raise HTTPException(
+            status_code=403,
+            detail="Only the plant owner can promote a worker to supervisor.",
+        )
+    try:
+        return promote_worker_to_supervisor(db, worker_id)
+    except ValueError as e:
+        raise HTTPException(status_code=404, detail=str(e))
+
+
 @router.get("/profile")
-def get_admin_profile(authorized: bool = Depends(require_admin), db: Session = Depends(get_db)):
-    """Returns the admin's own editable display name. There's a single fixed
-    admin account (login credentials live in .env), so this is always keyed
-    off ADMIN_USERNAME rather than anything from the request."""
-    profile = db.query(AdminProfile).filter(AdminProfile.username == ADMIN_USERNAME).first()
+def get_admin_profile(admin: dict = Depends(require_admin), db: Session = Depends(get_db)):
+    """Logged-in admin profile from the admins table."""
+    from auth.user_accounts import user_is_owner, ensure_at_least_one_owner, _roles_of
+    ensure_at_least_one_owner(db)
+    row = db.query(Admin).filter(Admin.admin_id == admin["admin_id"]).first()
+    if not row:
+        raise HTTPException(status_code=404, detail="Admin not found.")
+    roles = _roles_of(db, admin["admin_id"])
     return {
-        "username": ADMIN_USERNAME,
-        "name": profile.name if profile else None,
+        "username": row.admin_id,
+        "name": row.name,
+        "roles": roles,
+        "is_owner": user_is_owner(db, admin["admin_id"]),
     }
 
 
 @router.put("/profile")
 def update_admin_profile(
     req: AdminProfileUpdateRequest,
-    authorized: bool = Depends(require_admin),
+    admin: dict = Depends(require_admin),
     db: Session = Depends(get_db),
 ):
-    """Admin updates their own display name. Login credentials (username/password)
-    are fixed in .env and are never editable through this endpoint."""
-    profile = db.query(AdminProfile).filter(AdminProfile.username == ADMIN_USERNAME).first()
-    if profile:
-        profile.name = req.name
-    else:
-        profile = AdminProfile(username=ADMIN_USERNAME, name=req.name)
-        db.add(profile)
+    """Update display name (not login username)."""
+    row = db.query(Admin).filter(Admin.admin_id == admin["admin_id"]).first()
+    if not row:
+        raise HTTPException(status_code=404, detail="Admin not found.")
+    row.name = (req.name or "").strip() or row.name
     db.commit()
+    return {"status": "updated", "username": row.admin_id, "name": row.name}
 
-    return {"status": "updated", "username": ADMIN_USERNAME, "name": profile.name}
+
+@router.post("/change-password")
+def admin_change_password(
+    req: AdminChangePasswordRequest,
+    admin: dict = Depends(require_admin),
+    db: Session = Depends(get_db),
+):
+    """Logged-in admin sets a new password (must know the current one)."""
+    row = db.query(Admin).filter(Admin.admin_id == admin["admin_id"]).first()
+    if not row:
+        raise HTTPException(status_code=404, detail="Admin not found.")
+    if not verify_password(req.current_password, row.password_hash):
+        raise HTTPException(status_code=400, detail="Current password is incorrect.")
+    new_pw = (req.new_password or "").strip()
+    if len(new_pw) < 6:
+        raise HTTPException(status_code=400, detail="New password must be at least 6 characters.")
+    if req.new_password != req.confirm_password:
+        raise HTTPException(status_code=400, detail="New password and confirmation do not match.")
+    from auth.user_accounts import set_password_for_user
+    set_password_for_user(db, admin["admin_id"], new_pw)
+    return {"status": "password_updated", "message": "Password updated. Use it next time you sign in."}
+
+
+def _entry_from_chroma(entry_id, document, meta):
+    """Normalize a Chroma worker tip for the admin knowledge UI."""
+    return {
+        "id": entry_id,
+        "text": document,
+        "status": meta.get("status") or "pending",
+        "worker_id": meta.get("worker_id"),
+        "worker_name": meta.get("worker_name"),
+        "machine_id": meta.get("machine_id"),
+        "source_type": meta.get("source_type") or "worker_input",
+        "video_url": meta.get("video_url") or None,
+        "transcript": meta.get("transcript") or "",
+        "video_description": meta.get("video_description") or "",
+        "image_url": meta.get("image_url") or None,
+        "image_description": meta.get("image_description") or "",
+        "image_visible_text": meta.get("image_visible_text") or "",
+    }
 
 
 @router.post("/approve/{entry_id}")
 def approve_entry(entry_id: str, authorized: bool = Depends(require_admin)):
-    """Marks a pending knowledge entry as approved, so it becomes searchable in /ask."""
+    """Marks a knowledge entry as approved so it becomes searchable in /ask.
+    Works for pending and previously rejected tips."""
     existing = collection.get(ids=[entry_id])
     if not existing["ids"]:
         raise HTTPException(status_code=404, detail="Entry not found.")
@@ -99,36 +283,120 @@ def approve_entry(entry_id: str, authorized: bool = Depends(require_admin)):
     return {"status": "approved", "id": entry_id}
 
 
+@router.post("/reject/{entry_id}")
+def reject_entry(entry_id: str, authorized: bool = Depends(require_admin)):
+    """Soft-rejects a tip: kept in history, hidden from Ask retrieval.
+    Prefer this over hard delete when you want an audit trail."""
+    existing = collection.get(ids=[entry_id])
+    if not existing["ids"]:
+        raise HTTPException(status_code=404, detail="Entry not found.")
+
+    metadata = existing["metadatas"][0]
+    if metadata.get("source_type") == "manual":
+        raise HTTPException(status_code=400, detail="Cannot reject a manual chunk this way.")
+
+    metadata["status"] = "rejected"
+    collection.update(ids=[entry_id], metadatas=[metadata])
+
+    return {"status": "rejected", "id": entry_id}
+
+
 @router.delete("/delete/{entry_id}")
 def delete_entry(entry_id: str, authorized: bool = Depends(require_admin)):
-    """Permanently deletes a knowledge entry (manual chunk or worker entry) by its ID."""
+    """Permanently deletes a knowledge entry (manual chunk or worker tip) by its ID."""
     collection.delete(ids=[entry_id])
     return {"status": "deleted", "id": entry_id}
+
+
+@router.get("/knowledge")
+def list_knowledge(
+    machine_id: str,
+    status: str = "pending",
+    authorized: bool = Depends(require_admin),
+):
+    """
+    Lists worker tips for one machine filtered by status:
+    pending | approved | rejected | all
+    Manual PDF chunks are excluded (source_type != worker_input when set).
+    """
+    status = (status or "pending").strip().lower()
+    allowed = {"pending", "approved", "rejected", "all"}
+    if status not in allowed:
+        raise HTTPException(
+            status_code=400,
+            detail=f"status must be one of: {', '.join(sorted(allowed))}",
+        )
+
+    if status == "all":
+        results = collection.get(where={"machine_id": machine_id})
+    else:
+        results = collection.get(
+            where={
+                "$and": [
+                    {"machine_id": machine_id},
+                    {"status": status},
+                ]
+            }
+        )
+
+    entries = []
+    for i in range(len(results["ids"])):
+        meta = results["metadatas"][i] or {}
+        source = (meta.get("source_type") or "").strip()
+        # Worker tips always carry worker_id; skip manual PDF chunks
+        if source == "manual":
+            continue
+        if not meta.get("worker_id"):
+            continue
+        entries.append(
+            _entry_from_chroma(results["ids"][i], results["documents"][i], meta)
+        )
+
+    return {
+        "machine_id": machine_id,
+        "status": status,
+        "count": len(entries),
+        "entries": entries,
+        # backward-compatible alias used by older clients
+        "pending_entries": entries if status == "pending" else [],
+    }
 
 @router.get("/workers")
 def get_all_workers(authorized: bool = Depends(require_admin), db: Session = Depends(get_db)):
     """Returns every registered worker, approved or not - used to populate
     the admin's worker list/dropdown when assigning machines."""
+    from auth.user_accounts import _roles_of, ensure_users_schema, ROLE_WORKER, ROLE_SUPERVISOR, ROLE_OWNER
+    ensure_users_schema(db)
     workers = db.query(Worker).all()
-    return {
-        "workers": [
-            {
-                "worker_id": w.worker_id,
-                "name": w.name,
-                "is_approved": w.is_approved,
-                "phone_country_code": w.phone_country_code,
-                "phone_number": w.phone_number,
-                "address": w.address,
-            }
-            for w in workers
-        ]
-    }
+    from auth.user_accounts import ensure_role
+    out = []
+    for w in workers:
+        roles = _roles_of(db, w.worker_id)
+        # Brand-new identity with zero roles → default floor worker once
+        if not roles:
+            ensure_role(db, w.worker_id, ROLE_WORKER)
+            roles = _roles_of(db, w.worker_id)
+        out.append({
+            "worker_id": w.worker_id,
+            "name": w.name,
+            "is_approved": w.is_approved,
+            "phone_country_code": w.phone_country_code,
+            "phone_number": w.phone_number,
+            "address": w.address,
+            "email": getattr(w, "email", None) or "",
+            "email_verified": bool(getattr(w, "email_verified", False)),
+            "roles": roles,
+            "is_worker": ROLE_WORKER in roles,
+            "is_supervisor": ROLE_SUPERVISOR in roles,
+            "is_owner": ROLE_OWNER in roles,
+        })
+    return {"workers": out}
 
 @router.get("/pending")
 def get_pending(machine_id: str, authorized: bool = Depends(require_admin)):
     """Returns all worker-added knowledge entries still waiting for admin approval, for one machine.
-    Includes video_url/transcript/video_description when the tip has an attached video (see
-    rag/video_storage.py, rag/video_understanding.py, routers/knowledge.py)."""
+    Includes video fields and image fields (image_url / image_description / image_visible_text)
+    when the tip has attached media."""
     results = collection.get(
         where={
             "$and": [
@@ -140,27 +408,29 @@ def get_pending(machine_id: str, authorized: bool = Depends(require_admin)):
     entries = []
     for i in range(len(results["ids"])):
         meta = results["metadatas"][i]
-        entries.append({
-            "id": results["ids"][i],
-            "text": results["documents"][i],
-            "worker_id": meta.get("worker_id"),
-            "worker_name": meta.get("worker_name"),
-            "video_url": meta.get("video_url") or None,
-            "transcript": meta.get("transcript") or "",
-            "video_description": meta.get("video_description") or "",
-        })
-    return {"pending_entries": entries}
+        entries.append(_entry_from_chroma(results["ids"][i], results["documents"][i], meta))
+    return {"pending_entries": entries, "entries": entries, "count": len(entries)}
 
 
 # --- Worker account approval ---
 
 @router.get("/pending-workers")
 def get_pending_workers(authorized: bool = Depends(require_admin), db: Session = Depends(get_db)):
-    """Returns every worker account still waiting for admin approval."""
+    """Returns every worker account still waiting for admin approval,
+    including profile fields collected at registration."""
     pending = db.query(Worker).filter(Worker.is_approved == False).all()  # noqa: E712
     return {
         "pending_workers": [
-            {"worker_id": w.worker_id, "name": w.name} for w in pending
+            {
+                "worker_id": w.worker_id,
+                "name": w.name,
+                "phone_country_code": w.phone_country_code or "+91",
+                "phone_number": w.phone_number or "",
+                "address": w.address or "",
+                "email": getattr(w, "email", None) or "",
+                "email_verified": bool(getattr(w, "email_verified", False)),
+            }
+            for w in pending
         ]
     }
 
@@ -174,6 +444,18 @@ def approve_worker(worker_id: str, authorized: bool = Depends(require_admin), db
 
     worker.is_approved = True
     db.commit()
+
+    # Notify worker if they have an email on file
+    email = (getattr(worker, "email", None) or "").strip()
+    if email:
+        try:
+            send_account_approved_email(
+                email,
+                worker_id=worker.worker_id,
+                name=worker.name or "",
+            )
+        except Exception as e:
+            print(f"[SkillVault mail] approval email failed: {e}")
 
     return {"status": "approved", "worker_id": worker_id, "name": worker.name}
 
@@ -244,6 +526,23 @@ def admin_update_worker(
     final_phone = req.phone_number if req.phone_number is not None else worker.phone_number
     final_address = req.address if req.address is not None else worker.address
 
+    # Email: normalize; if address changes, drop verification unless client
+    # explicitly sends email_verified=True (after OTP on admin UI).
+    current_email = (getattr(worker, "email", None) or "").strip().lower() or None
+    if req.email is not None:
+        raw = (req.email or "").strip().lower()
+        final_email = raw or None
+    else:
+        final_email = current_email
+    if req.email_verified is True and final_email:
+        final_email_verified = True
+    elif final_email != current_email:
+        final_email_verified = False
+    elif req.email_verified is False:
+        final_email_verified = False
+    else:
+        final_email_verified = bool(getattr(worker, "email_verified", False))
+
     try:
         if renaming:
             new_worker = Worker(
@@ -254,6 +553,8 @@ def admin_update_worker(
                 phone_country_code=final_country_code,
                 phone_number=final_phone,
                 address=final_address,
+                email=final_email,
+                email_verified=final_email_verified,
             )
             db.add(new_worker)
             db.flush()  # new row must exist before children are re-pointed at it
@@ -278,6 +579,8 @@ def admin_update_worker(
             worker.phone_country_code = final_country_code
             worker.phone_number = final_phone
             worker.address = final_address
+            worker.email = final_email
+            worker.email_verified = final_email_verified
             db.commit()
             final_worker_id = worker_id
 
@@ -292,6 +595,8 @@ def admin_update_worker(
         "phone_country_code": final_country_code,
         "phone_number": final_phone,
         "address": final_address,
+        "email": final_email,
+        "email_verified": final_email_verified,
     }
 
 
@@ -355,28 +660,156 @@ def remove_manual(machine_id: str, filename: str, authorized: bool = Depends(req
 
 @router.get("/all-machines")
 def get_all_machines(authorized: bool = Depends(require_admin)):
-    """Lists every machine_id that has at least one manual uploaded - for the assignment dropdown."""
+    """
+    Lists every machine_id that still has knowledge in Chroma (manuals or tips).
+    Used for assignment dropdowns and the Manuals page machine list.
+    """
     return {"machine_ids": list_all_machine_ids()}
+
+
+@router.delete("/machines/{machine_id}")
+def delete_machine(
+    machine_id: str,
+    authorized: bool = Depends(require_admin),
+    db: Session = Depends(get_db),
+):
+    """
+    Permanently remove a machine and all related data in one click:
+
+    - All Chroma knowledge (manuals, worker tips, interview-derived entries)
+    - Worker ↔ machine assignments
+    - Safety measures + completions for this machine
+    - Interview sessions (+ turns) for this machine
+    - Tickets, question logs, daily updates tagged with this machine
+
+    After this, the machine disappears from admin lists, worker selectors,
+    Ask, Safety, Interview, etc. Workers can no longer select it.
+    """
+    machine_id = (machine_id or "").strip()
+    if not machine_id:
+        raise HTTPException(status_code=400, detail="machine_id is required.")
+
+    # How many workers had this machine (for response)
+    assignment_count = (
+        db.query(WorkerMachine)
+        .filter(WorkerMachine.machine_id == machine_id)
+        .count()
+    )
+
+    # --- Postgres cascade (order matters where FKs exist) ---
+    # Interview turns → sessions
+    session_ids = [
+        r[0]
+        for r in db.query(InterviewSession.id)
+        .filter(InterviewSession.machine_id == machine_id)
+        .all()
+    ]
+    turns_deleted = 0
+    if session_ids:
+        turns_deleted = (
+            db.query(InterviewTurn)
+            .filter(InterviewTurn.session_id.in_(session_ids))
+            .delete(synchronize_session=False)
+        )
+    sessions_deleted = (
+        db.query(InterviewSession)
+        .filter(InterviewSession.machine_id == machine_id)
+        .delete(synchronize_session=False)
+    )
+
+    safety_measures_deleted = (
+        db.query(SafetyMeasure)
+        .filter(SafetyMeasure.machine_id == machine_id)
+        .delete(synchronize_session=False)
+    )
+    safety_completions_deleted = (
+        db.query(SafetyCompletion)
+        .filter(SafetyCompletion.machine_id == machine_id)
+        .delete(synchronize_session=False)
+    )
+    tickets_deleted = (
+        db.query(Ticket)
+        .filter(Ticket.machine_id == machine_id)
+        .delete(synchronize_session=False)
+    )
+    question_logs_deleted = (
+        db.query(QuestionLog)
+        .filter(QuestionLog.machine_id == machine_id)
+        .delete(synchronize_session=False)
+    )
+    daily_updates_deleted = (
+        db.query(DailyUpdate)
+        .filter(DailyUpdate.machine_id == machine_id)
+        .delete(synchronize_session=False)
+    )
+    assignments_deleted = (
+        db.query(WorkerMachine)
+        .filter(WorkerMachine.machine_id == machine_id)
+        .delete(synchronize_session=False)
+    )
+
+    db.commit()
+
+    # --- Chroma: all knowledge for this machine ---
+    chroma_deleted = delete_all_for_machine(machine_id)
+
+    return {
+        "status": "deleted",
+        "machine_id": machine_id,
+        "summary": {
+            "chroma_entries_removed": chroma_deleted,
+            "worker_assignments_removed": assignments_deleted,
+            "workers_affected": assignment_count,
+            "interview_sessions_removed": sessions_deleted,
+            "interview_turns_removed": turns_deleted,
+            "safety_measures_removed": safety_measures_deleted,
+            "safety_completions_removed": safety_completions_deleted,
+            "tickets_removed": tickets_deleted,
+            "question_logs_removed": question_logs_deleted,
+            "daily_updates_removed": daily_updates_deleted,
+        },
+        "message": (
+            f"Machine '{machine_id}' and all related knowledge, assignments, "
+            "interviews, safety data, tickets, and daily updates were removed."
+        ),
+    }
 
 
 @router.post("/assign-machine")
 def assign_machine(req: AssignMachineRequest, authorized: bool = Depends(require_admin), db: Session = Depends(get_db)):
-    """Grants a worker access to one machine. Safe to call again for an already-assigned pair (no duplicate error)."""
+    """Grants a worker access to one machine. Safe to call again for an already-assigned pair (no duplicate error).
+    Only machines that still exist in the knowledge base (have Chroma entries) can be assigned,
+    so deleted machines cannot be re-assigned by accident.
+    """
     worker = db.query(Worker).filter(Worker.worker_id == req.worker_id).first()
     if not worker:
         raise HTTPException(status_code=404, detail="Worker not found.")
 
+    mid = (req.machine_id or "").strip()
+    if not mid:
+        raise HTTPException(status_code=400, detail="machine_id is required.")
+
+    known = set(list_all_machine_ids())
+    if mid not in known:
+        raise HTTPException(
+            status_code=404,
+            detail=(
+                f"Machine '{mid}' does not exist or was deleted. "
+                "Upload a manual for this machine first, or pick a machine from the list."
+            ),
+        )
+
     existing = db.query(WorkerMachine).filter(
         WorkerMachine.worker_id == req.worker_id,
-        WorkerMachine.machine_id == req.machine_id,
+        WorkerMachine.machine_id == mid,
     ).first()
     if existing:
-        return {"status": "already assigned", "worker_id": req.worker_id, "machine_id": req.machine_id}
+        return {"status": "already assigned", "worker_id": req.worker_id, "machine_id": mid}
 
-    db.add(WorkerMachine(worker_id=req.worker_id, machine_id=req.machine_id))
+    db.add(WorkerMachine(worker_id=req.worker_id, machine_id=mid))
     db.commit()
 
-    return {"status": "assigned", "worker_id": req.worker_id, "machine_id": req.machine_id}
+    return {"status": "assigned", "worker_id": req.worker_id, "machine_id": mid}
 
 
 @router.delete("/unassign-machine")
@@ -420,3 +853,93 @@ def edit_entry(entry_id: str, req: EditEntryRequest, authorized: bool = Depends(
     collection.update(ids=[entry_id], documents=[text], embeddings=[embedding])
 
     return {"status": "edited", "id": entry_id, "text": text}
+
+@router.put("/workers/{worker_id}/password")
+def admin_set_worker_password(
+    worker_id: str,
+    req: AdminSetPasswordRequest,
+    authorized: bool = Depends(require_admin),
+    db: Session = Depends(get_db),
+):
+    """
+    Set a temporary password ONLY if this worker has a pending
+    forgot-password request (supervisor path). Share the password offline.
+    """
+    from models import WorkerSession, PasswordResetRequest
+    from datetime import datetime
+
+    pwd = (req.temporary_password or "").strip()
+    if len(pwd) < 6:
+        raise HTTPException(status_code=400, detail="Temporary password must be at least 6 characters.")
+    worker = db.query(Worker).filter(Worker.worker_id == worker_id).first()
+    if not worker:
+        raise HTTPException(status_code=404, detail="Worker not found.")
+
+    pending = (
+        db.query(PasswordResetRequest)
+        .filter(
+            PasswordResetRequest.worker_id == worker_id,
+            PasswordResetRequest.status == "pending",
+        )
+        .order_by(PasswordResetRequest.id.desc())
+        .first()
+    )
+    if not pending:
+        raise HTTPException(
+            status_code=400,
+            detail="No pending password-reset request from this worker. They must use Forgot password → Ask supervisor first.",
+        )
+
+    from auth.user_accounts import set_password_for_user
+    set_password_for_user(db, worker_id, pwd)
+    pending.status = "completed"
+    pending.resolved_at = datetime.utcnow()
+    pending.resolved_by = "admin"
+    db.commit()
+    return {
+        "status": "password_set",
+        "worker_id": worker_id,
+        "message": "Temporary password set. Share it with the worker securely. Their reset request is closed.",
+    }
+
+
+@router.get("/password-reset-requests")
+def list_password_reset_requests(
+    status: str = "pending",
+    authorized: bool = Depends(require_admin),
+    db: Session = Depends(get_db),
+):
+    """Pending (or all) password reset requests from workers."""
+    from models import PasswordResetRequest, Worker
+    from sqlalchemy import text as sql_text
+    try:
+        db.execute(sql_text("""
+            CREATE TABLE IF NOT EXISTS password_reset_requests (
+                id SERIAL PRIMARY KEY,
+                worker_id VARCHAR NOT NULL,
+                status VARCHAR NOT NULL DEFAULT 'pending',
+                created_at TIMESTAMP DEFAULT NOW(),
+                resolved_at TIMESTAMP,
+                resolved_by VARCHAR
+            )
+        """))
+        db.commit()
+    except Exception:
+        db.rollback()
+
+    q = db.query(PasswordResetRequest)
+    if status and status != "all":
+        q = q.filter(PasswordResetRequest.status == status)
+    rows = q.order_by(PasswordResetRequest.created_at.desc()).limit(200).all()
+    out = []
+    for r in rows:
+        w = db.query(Worker).filter(Worker.worker_id == r.worker_id).first()
+        out.append({
+            "id": r.id,
+            "worker_id": r.worker_id,
+            "name": w.name if w else None,
+            "status": r.status,
+            "created_at": r.created_at.isoformat() + "Z" if r.created_at else None,
+            "resolved_at": r.resolved_at.isoformat() + "Z" if r.resolved_at else None,
+        })
+    return {"requests": out}

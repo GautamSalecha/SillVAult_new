@@ -10,6 +10,36 @@ from datetime import datetime
 from db import Base
 
 
+class User(Base):
+    """
+    Single login identity (real-world standard).
+    Roles in user_roles: worker and/or supervisor.
+    Floor FKs still use workers.worker_id (same value as user_id for workers).
+    """
+    __tablename__ = "users"
+
+    user_id = Column(String, primary_key=True)
+    password_hash = Column(String, nullable=False)
+    name = Column(String, nullable=True)
+    email = Column(String, nullable=True)
+    email_verified = Column(Boolean, nullable=False, default=False)
+    phone_country_code = Column(String, nullable=True)
+    phone_number = Column(String, nullable=True)
+    address = Column(Text, nullable=True)
+    is_active = Column(Boolean, nullable=False, default=True)
+    created_at = Column(DateTime, default=datetime.utcnow)
+    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+
+class UserRole(Base):
+    """Roles for a user: worker | supervisor (both allowed)."""
+    __tablename__ = "user_roles"
+    __table_args__ = (UniqueConstraint("user_id", "role", name="uq_user_role"),)
+
+    user_id = Column(String, ForeignKey("users.user_id"), primary_key=True)
+    role = Column(String, primary_key=True)  # worker | supervisor
+
+
 class Worker(Base):
     """One row per registered worker - their login ID, scrambled password, name, and approval status."""
     __tablename__ = "workers"
@@ -25,17 +55,63 @@ class Worker(Base):
     phone_country_code = Column(String, nullable=True, default="+91")
     phone_number = Column(String, nullable=True)
     address = Column(Text, nullable=True)
+    # Optional contact email — must be OTP-verified before password reset by email
+    email = Column(String, nullable=True)
+    email_verified = Column(Boolean, nullable=False, default=False)
+
+
+class EmailOtp(Base):
+    """
+    Short-lived one-time codes for email verification and password reset.
+    purpose: "verify_email" | "reset_password"
+    """
+    __tablename__ = "email_otps"
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    email = Column(String, nullable=False, index=True)
+    worker_id = Column(String, nullable=True, index=True)
+    purpose = Column(String, nullable=False)
+    code = Column(String, nullable=False)
+    expires_at = Column(DateTime, nullable=False)
+    consumed = Column(Boolean, nullable=False, default=False)
+    created_at = Column(DateTime, default=datetime.utcnow)
+
+
+class PasswordResetRequest(Base):
+    """
+    Worker asked supervisor to set a temporary password.
+    Admin may set a temp password only while status is pending.
+    """
+    __tablename__ = "password_reset_requests"
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    worker_id = Column(String, ForeignKey("workers.worker_id"), nullable=False, index=True)
+    status = Column(String, nullable=False, default="pending")  # pending | completed | cancelled
+    created_at = Column(DateTime, default=datetime.utcnow)
+    resolved_at = Column(DateTime, nullable=True)
+    resolved_by = Column(String, nullable=True)  # admin label
+
+
+class Admin(Base):
+    """
+    Supervisor account stored in Postgres (not .env).
+    Password is bcrypt-hashed. First admin is seeded once from
+    ADMIN_USERNAME / ADMIN_PASSWORD in .env when the table is empty.
+    """
+    __tablename__ = "admins"
+
+    admin_id = Column(String, primary_key=True)  # login username
+    password_hash = Column(String, nullable=False)
+    name = Column(String, nullable=True)
+    is_active = Column(Boolean, nullable=False, default=True)
+    created_at = Column(DateTime, default=datetime.utcnow)
+    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
 
 
 class AdminProfile(Base):
     """
-    Editable display profile for the admin account. Login credentials
-    (ADMIN_USERNAME / ADMIN_PASSWORD) stay fixed in .env - this table
-    only stores the display name, so it can be updated from the app
-    without ever touching the login password. Keyed by username so it
-    still lines up if ADMIN_USERNAME is ever rotated. Row is created
-    lazily on first PUT /admin/profile (or read as "no name set yet"
-    on GET before that).
+    Legacy display-name table. Prefer Admin.name going forward.
+    Kept so older DBs do not break; new code reads/writes Admin.
     """
     __tablename__ = "admin_profiles"
 
@@ -58,10 +134,11 @@ class WorkerSession(Base):
 
 
 class AdminSession(Base):
-    """One row per active admin login."""
+    """One row per active admin login. admin_id links to admins.admin_id."""
     __tablename__ = "admin_sessions"
 
     token = Column(String, primary_key=True)
+    admin_id = Column(String, nullable=True, index=True)  # nullable for migration of old rows
     expires_at = Column(DateTime, nullable=False)
 
 
@@ -87,6 +164,7 @@ class Ticket(Base):
     description = Column(Text, nullable=False)
     priority = Column(String, nullable=False, default="Medium")  # Low / Medium / High
     status = Column(String, nullable=False, default="Open")      # Open / In Progress / Resolved / Closed
+    admin_note = Column(Text, nullable=True)  # supervisor response visible to the worker
     created_at = Column(DateTime, default=datetime.utcnow)
     updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
 
@@ -214,3 +292,20 @@ class SafetyCompletion(Base):
     machine_id = Column(String, nullable=False)
     language_code = Column(String, nullable=False, default="en-IN")
     completed_at = Column(DateTime, default=datetime.utcnow)
+
+class DailyUpdate(Base):
+    """
+    Worker end-of-shift / daily status notes.
+    Stored in Postgres only (not Chroma) — operational log, not RAG knowledge.
+    """
+    __tablename__ = "daily_updates"
+
+    id = Column(String, primary_key=True)  # uuid
+    worker_id = Column(String, ForeignKey("workers.worker_id"), nullable=False)
+    worker_name = Column(String, nullable=True)
+    machine_id = Column(String, nullable=True)
+    report_date = Column(String, nullable=False)  # YYYY-MM-DD (local day chosen by worker)
+    raw_text = Column(Text, nullable=False)       # what the worker first wrote/spoke
+    optimized_text = Column(Text, nullable=False) # AI-polished version they submitted
+    created_at = Column(DateTime, default=datetime.utcnow)
+    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)

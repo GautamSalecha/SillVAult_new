@@ -6,12 +6,20 @@ Kept in one file since they're small and every router needs a subset of them.
 """
 
 from pydantic import BaseModel
-from typing import Optional
+from typing import Optional, List
+
+
+class AskHistoryTurn(BaseModel):
+    """One prior turn in the Ask chat (worker or ai)."""
+    role: str  # "worker" | "ai" | "user" | "assistant"
+    text: str
 
 
 class AskRequest(BaseModel):
     question: str
     machine_id: str
+    # Optional recent chat turns for context window (oldest → newest, exclude current question)
+    history: Optional[List[AskHistoryTurn]] = None
 
 
 class AddKnowledgeRequest(BaseModel):
@@ -51,6 +59,8 @@ class WorkerRegisterRequest(BaseModel):
     phone_country_code: str = "+91"
     phone_number: Optional[str] = None
     address: Optional[str] = None
+    email: Optional[str] = None
+    email_verified: Optional[bool] = False
 
 
 class WorkerLoginRequest(BaseModel):
@@ -67,14 +77,28 @@ class WorkerProfileUpdateRequest(BaseModel):
     phone_country_code: Optional[str] = None
     phone_number: Optional[str] = None
     address: Optional[str] = None
+    email: Optional[str] = None
     current_password: Optional[str] = None
     new_password: Optional[str] = None
 
 
 class AdminProfileUpdateRequest(BaseModel):
-    """PUT /admin/profile - admin editing their own display name.
-    No password field - login credentials are never editable here."""
+    """PUT /admin/profile - admin editing their own display name."""
     name: str
+
+
+class AdminChangePasswordRequest(BaseModel):
+    """POST /admin/change-password — logged-in admin."""
+    current_password: str
+    new_password: str
+    confirm_password: str
+
+
+class AdminCreateSupervisorRequest(BaseModel):
+    """POST /admin/supervisors — create supervisor-only account."""
+    username: str
+    password: str
+    name: Optional[str] = None
 
 
 class AdminUpdateWorkerRequest(BaseModel):
@@ -82,12 +106,16 @@ class AdminUpdateWorkerRequest(BaseModel):
     Every field optional; only the ones provided get changed. No password
     field - admin can never set or view a worker's password. new_worker_id,
     if given and different, renames the worker's login ID (cascades to
-    every table that references it - see admin.py)."""
+    every table that references it - see admin.py).
+    email: if changed without email_verified=True, stored as unverified.
+    Admin can mark verified only after OTP flow (same as worker profile)."""
     new_worker_id: Optional[str] = None
     name: Optional[str] = None
     phone_country_code: Optional[str] = None
     phone_number: Optional[str] = None
     address: Optional[str] = None
+    email: Optional[str] = None
+    email_verified: Optional[bool] = None
 
 class AssignMachineRequest(BaseModel):
     worker_id: str
@@ -122,7 +150,10 @@ class CreateTicketRequest(BaseModel):
     priority: str = "Medium"  # Low / Medium / High
 
 class UpdateTicketRequest(BaseModel):
-    status: str  # Open / In Progress / Resolved / Closed
+    status: Optional[str] = None  # Open / In Progress / Resolved / Closed
+    priority: Optional[str] = None  # Low / Medium / High
+    admin_note: Optional[str] = None  # supervisor note shown to the worker
+
 
 
 # ---------- Safety Measures ----------
@@ -155,3 +186,51 @@ class ReorderSafetyMeasuresRequest(BaseModel):
 
 class CompleteSafetyRequest(BaseModel):
     language_code: str = "en-IN"
+
+
+# ---------- Daily Updates (Postgres only, not RAG) ----------
+
+class OptimizeDailyUpdateRequest(BaseModel):
+    text: str
+    machine_id: Optional[str] = None
+
+
+class SubmitDailyUpdateRequest(BaseModel):
+    raw_text: str
+    optimized_text: str
+    machine_id: Optional[str] = None
+    report_date: Optional[str] = None  # YYYY-MM-DD; defaults to today UTC if omitted
+
+
+# ---------- Email OTP / password recovery ----------
+class SendEmailOtpRequest(BaseModel):
+    email: str
+    purpose: str  # verify_email | reset_password
+    worker_id: Optional[str] = None
+
+
+class VerifyEmailOtpRequest(BaseModel):
+    email: str
+    code: str
+    purpose: str
+    worker_id: Optional[str] = None
+
+
+class ForgotLookupRequest(BaseModel):
+    worker_id: str
+
+
+class ForgotResetRequest(BaseModel):
+    worker_id: str
+    code: str
+    new_password: str
+
+
+class AdminSetPasswordRequest(BaseModel):
+    temporary_password: str
+
+
+class AdminSetRolesRequest(BaseModel):
+    """Owner sets floor worker / supervisor access for one account."""
+    as_worker: bool = True
+    as_supervisor: bool = False

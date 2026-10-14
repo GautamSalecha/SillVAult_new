@@ -22,14 +22,98 @@ from fastapi import APIRouter, HTTPException, Depends
 from sqlalchemy.orm import Session
 
 from db import get_db
-from models import Worker, WorkerSession, WorkerMachine
-from schemas import WorkerRegisterRequest, WorkerLoginRequest, WorkerProfileUpdateRequest
+from datetime import datetime, timedelta
+from models import Worker, WorkerSession, WorkerMachine, EmailOtp, PasswordResetRequest
+from schemas import (
+    WorkerRegisterRequest, WorkerLoginRequest, WorkerProfileUpdateRequest,
+    SendEmailOtpRequest, VerifyEmailOtpRequest, ForgotLookupRequest, ForgotResetRequest,
+)
 from auth.security import hash_password, verify_password, make_expiry_time
 from config import TOKEN_EXPIRY_HOURS
 from auth.worker_auth import require_worker
 from rag.chroma_store import collection
+from mail_util import send_otp_email, send_welcome_email, send_password_changed_email, smtp_configured
+from sqlalchemy import text as sql_text
+
 
 router = APIRouter(prefix="/worker", tags=["worker"])
+
+_OTP_TTL_MIN = 10
+
+
+def _ensure_email_columns(db: Session):
+    """Add email columns / otp table on older Postgres DBs without a migration tool."""
+    try:
+        db.execute(sql_text("ALTER TABLE workers ADD COLUMN IF NOT EXISTS email VARCHAR"))
+        db.execute(sql_text("ALTER TABLE workers ADD COLUMN IF NOT EXISTS email_verified BOOLEAN DEFAULT FALSE"))
+        db.execute(sql_text("""
+            CREATE TABLE IF NOT EXISTS email_otps (
+                id SERIAL PRIMARY KEY,
+                email VARCHAR NOT NULL,
+                worker_id VARCHAR,
+                purpose VARCHAR NOT NULL,
+                code VARCHAR NOT NULL,
+                expires_at TIMESTAMP NOT NULL,
+                consumed BOOLEAN DEFAULT FALSE,
+                created_at TIMESTAMP DEFAULT NOW()
+            )
+        """))
+        db.execute(sql_text("""
+            CREATE TABLE IF NOT EXISTS password_reset_requests (
+                id SERIAL PRIMARY KEY,
+                worker_id VARCHAR NOT NULL,
+                status VARCHAR NOT NULL DEFAULT 'pending',
+                created_at TIMESTAMP DEFAULT NOW(),
+                resolved_at TIMESTAMP,
+                resolved_by VARCHAR
+            )
+        """))
+        db.commit()
+    except Exception:
+        db.rollback()
+
+
+def _norm_email(email: str) -> str:
+    return (email or "").strip().lower()
+
+
+def _norm_otp_code(code: str) -> str:
+    """Digits only — UI / copy-paste often inserts spaces."""
+    return "".join(ch for ch in (code or "") if ch.isdigit())
+
+
+def _mask_email(email: str) -> str:
+    if not email or "@" not in email:
+        return ""
+    local, _, domain = email.partition("@")
+    if len(local) <= 2:
+        shown = local[:1] + "***"
+    else:
+        shown = local[:2] + "***"
+    return f"{shown}@{domain}"
+
+
+def _issue_otp(db: Session, email: str, purpose: str, worker_id: str | None = None) -> tuple[str, bool]:
+    """Create OTP row, try to email it. Returns (code, mailed)."""
+    import random
+    code = f"{random.randint(100000, 999999)}"
+    row = EmailOtp(
+        email=email,
+        worker_id=worker_id,
+        purpose=purpose,
+        code=code,
+        expires_at=datetime.utcnow() + timedelta(minutes=_OTP_TTL_MIN),
+        consumed=False,
+    )
+    db.add(row)
+    db.commit()
+    mailed = False
+    try:
+        mailed = send_otp_email(email, code, purpose, worker_id=worker_id or "")
+    except Exception as e:
+        print(f"[SkillVault mail] send failed: {e}")
+    return code, mailed
+
 
 _WORKER_ID_RE = re.compile(r"^W(\d+)$")
 
@@ -66,6 +150,13 @@ def worker_register(req: WorkerRegisterRequest, db: Session = Depends(get_db)):
     False until an admin approves it."""
     worker_id = generate_worker_id(db)
 
+    _ensure_email_columns(db)
+    email = _norm_email(req.email) if req.email else None
+    email_verified = bool(req.email_verified) if email else False
+    if email and not email_verified:
+        # Allow saving unverified email, but password-reset-by-email stays off until verified
+        email_verified = False
+
     new_worker = Worker(
         worker_id=worker_id,
         password_hash=hash_password(req.password),
@@ -73,28 +164,73 @@ def worker_register(req: WorkerRegisterRequest, db: Session = Depends(get_db)):
         phone_country_code=req.phone_country_code,
         phone_number=req.phone_number,
         address=req.address,
+        email=email,
+        email_verified=email_verified,
     )
     db.add(new_worker)
     db.commit()
+    # Unified identity: users + worker role
+    try:
+        from auth.user_accounts import upsert_user_from_worker
+        upsert_user_from_worker(db, new_worker)
+    except Exception as e:
+        print(f"[SkillVault] user upsert on register: {e}")
+
+    msg = "Registration received. An admin must approve your account before you can log in."
+    if email and email_verified:
+        try:
+            send_welcome_email(email, worker_id, name=req.name or "")
+        except Exception as e:
+            print(f"[SkillVault mail] welcome failed: {e}")
+        msg += f" Your Worker ID is {worker_id}. A welcome email was sent if mail is configured."
 
     return {
         "status": "registered",
         "worker_id": worker_id,
         "name": req.name,
-        "message": "Registration received. An admin must approve your account before you can log in.",
+        "email": email,
+        "email_verified": email_verified,
+        "message": msg,
     }
 
 
 @router.post("/login")
 def worker_login(req: WorkerLoginRequest, db: Session = Depends(get_db)):
-    """A worker logs in with their worker_id and password, and gets a token that expires after TOKEN_EXPIRY_HOURS.
-    Blocked with a 403 if the account hasn't been approved by an admin yet."""
+    """
+    Worker login via unified users + worker role.
+    Still requires workers.is_approved for floor access.
+    """
+    from auth.user_accounts import authenticate, ROLE_WORKER, upsert_user_from_worker
+    from auth.rate_limit import check_rate_limit
+    check_rate_limit(
+        f"worker_login:{(req.worker_id or '').strip().lower()}",
+        max_hits=10,
+        window_seconds=300,
+        detail="Too many login attempts. Wait 5 minutes and try again.",
+    )
+
     worker = db.query(Worker).filter(Worker.worker_id == req.worker_id).first()
     if not worker:
         raise HTTPException(status_code=401, detail="Worker ID not found. Please register first.")
 
-    if not verify_password(req.password, worker.password_hash):
-        raise HTTPException(status_code=401, detail="Incorrect password.")
+    result = authenticate(db, req.worker_id, req.password)
+    if not result:
+        # Fallback: legacy hash on workers row only (create user once, keep roles)
+        if not verify_password(req.password, worker.password_hash):
+            raise HTTPException(status_code=401, detail="Incorrect password.")
+        from auth.user_accounts import _roles_of
+        upsert_user_from_worker(db, worker)
+        roles = _roles_of(db, worker.worker_id)
+        user_name = worker.name
+    else:
+        _user, roles = result
+        user_name = _user.name or worker.name
+
+    if ROLE_WORKER not in roles:
+        raise HTTPException(
+            status_code=403,
+            detail="This account has no worker access. Use Admin sign-in if you are a supervisor.",
+        )
 
     if not worker.is_approved:
         raise HTTPException(status_code=403, detail="Your account is still waiting for admin approval.")
@@ -106,48 +242,98 @@ def worker_login(req: WorkerLoginRequest, db: Session = Depends(get_db)):
 
     return {
         "token": token,
-        "name": worker.name,
+        "name": user_name,
+        "worker_id": worker.worker_id,
+        "roles": roles if result else [ROLE_WORKER],
         "expires_in_hours": TOKEN_EXPIRY_HOURS,
         "message": "Login successful. Use this token in the Authorization header as 'Bearer <token>'.",
     }
 
 
+
+@router.post("/logout")
+def worker_logout(worker: dict = Depends(require_worker), db: Session = Depends(get_db)):
+    """Revoke current worker session token (Sign out)."""
+    from models import WorkerSession
+    tok = worker.get("token")
+    if tok:
+        db.query(WorkerSession).filter(WorkerSession.token == tok).delete()
+        db.commit()
+    return {"status": "logged_out", "message": "Session ended."}
+
+
 @router.get("/my-machines")
 def my_machines(worker: dict = Depends(require_worker), db: Session = Depends(get_db)):
-    """Returns only the machines THIS logged-in worker has been assigned by admin."""
-    assignments = db.query(WorkerMachine).filter(WorkerMachine.worker_id == worker["worker_id"]).all()
-    return {"machine_ids": [a.machine_id for a in assignments]}
+    """
+    Returns only the machines THIS logged-in worker has been assigned by admin
+    AND that still exist in the knowledge base. Orphan assignments (machine
+    was deleted) are cleaned up automatically so they never appear in Ask,
+    Safety, Interview, etc.
+    """
+    from rag.chroma_store import list_all_machine_ids
+
+    assignments = (
+        db.query(WorkerMachine)
+        .filter(WorkerMachine.worker_id == worker["worker_id"])
+        .all()
+    )
+    known = set(list_all_machine_ids())
+    valid = []
+    orphans = []
+    for a in assignments:
+        if a.machine_id in known:
+            valid.append(a.machine_id)
+        else:
+            orphans.append(a.machine_id)
+
+    if orphans:
+        db.query(WorkerMachine).filter(
+            WorkerMachine.worker_id == worker["worker_id"],
+            WorkerMachine.machine_id.in_(orphans),
+        ).delete(synchronize_session=False)
+        db.commit()
+
+    return {"machine_ids": valid}
 
 
 @router.get("/my-tips")
 def my_tips(worker: dict = Depends(require_worker)):
     """
-    Returns every knowledge entry this worker has personally submitted,
-    across all machines, with each one's current status.
-
-    Status is either "pending" (awaiting admin review, not yet
-    searchable via /ask) or "approved" (live in the knowledge base).
-    There is no "rejected" status - rejecting a tip is a hard delete
-    (see admin.py's delete_entry), so a rejected tip simply stops
-    appearing here rather than showing a rejected badge.
-
-    No submission timestamp is stored today, so results aren't sorted
-    by date - only whatever order Chroma returns them in.
+    Returns every knowledge entry this worker submitted, including
+    video_url / image_url so the Library can show media.
     """
-    results = collection.get(where={"worker_id": worker["worker_id"]})
+    import re
+    results = collection.get(
+        where={"worker_id": worker["worker_id"]},
+        include=["documents", "metadatas"],
+    )
 
     tips = []
-    for i in range(len(results["ids"])):
-        meta = results["metadatas"][i]
+    ids = results.get("ids") or []
+    docs = results.get("documents") or []
+    metas = results.get("metadatas") or []
+    for i in range(len(ids)):
+        meta = metas[i] or {}
+        raw = docs[i] or ""
+        # Tip body without long AI understanding blocks
+        display = re.split(
+            r"\n\s*\[(?:Video Understanding|Image Understanding|Transcript|Image Text)\]",
+            raw,
+            maxsplit=1,
+        )[0].strip() or raw
         tips.append({
-            "id": results["ids"][i],
-            "text": results["documents"][i],
+            "id": ids[i],
+            "text": display,
+            "full_text": raw,
             "machine_id": meta.get("machine_id"),
             "status": meta.get("status", "pending"),
+            "video_url": meta.get("video_url") or None,
+            "image_url": meta.get("image_url") or None,
+            "created_at": meta.get("created_at") or meta.get("submitted_at") or None,
         })
 
+    tips.sort(key=lambda t: t.get("created_at") or "", reverse=True)
     return {"tips": tips}
-
 
 @router.get("/profile")
 def get_my_profile(worker: dict = Depends(require_worker), db: Session = Depends(get_db)):
@@ -156,12 +342,15 @@ def get_my_profile(worker: dict = Depends(require_worker), db: Session = Depends
     if not w:
         raise HTTPException(status_code=404, detail="Worker not found.")
 
+    _ensure_email_columns(db)
     return {
         "worker_id": w.worker_id,
         "name": w.name,
         "phone_country_code": w.phone_country_code,
         "phone_number": w.phone_number,
         "address": w.address,
+        "email": getattr(w, "email", None),
+        "email_verified": bool(getattr(w, "email_verified", False)),
     }
 
 
@@ -193,14 +382,37 @@ def update_my_profile(
     if req.address is not None:
         w.address = req.address
 
+    if req.email is not None:
+        new_email = _norm_email(req.email)
+        if not new_email:
+            w.email = None
+            w.email_verified = False
+        elif new_email != _norm_email(w.email or ""):
+            w.email = new_email
+            w.email_verified = False
+
+    password_changed = False
     if req.new_password:
         if not req.current_password:
             raise HTTPException(status_code=400, detail="Enter your current password to set a new one.")
         if not verify_password(req.current_password, w.password_hash):
             raise HTTPException(status_code=401, detail="Current password is incorrect.")
         w.password_hash = hash_password(req.new_password)
+        password_changed = True
 
     db.commit()
+
+    if password_changed:
+        email = (getattr(w, "email", None) or "").strip()
+        if email:
+            try:
+                send_password_changed_email(
+                    email,
+                    name=w.name or "",
+                    worker_id=w.worker_id,
+                )
+            except Exception as e:
+                print(f"[SkillVault mail] password-changed email failed: {e}")
 
     return {
         "status": "updated",
@@ -209,4 +421,223 @@ def update_my_profile(
         "phone_country_code": w.phone_country_code,
         "phone_number": w.phone_number,
         "address": w.address,
+        "email": getattr(w, "email", None),
+        "email_verified": bool(getattr(w, "email_verified", False)),
+    }
+
+# ---------- Email OTP / forgot password ----------
+
+@router.post("/email/send-otp")
+def send_email_otp(req: SendEmailOtpRequest, db: Session = Depends(get_db)):
+    """
+    Send a 6-digit OTP.
+    purpose=verify_email  → any email (register / profile)
+    purpose=reset_password → must match a worker's verified email for worker_id
+    """
+    _ensure_email_columns(db)
+    email = _norm_email(req.email)
+    purpose = (req.purpose or "").strip()
+    if not email or "@" not in email:
+        raise HTTPException(status_code=400, detail="Enter a valid email address.")
+    if purpose not in ("verify_email", "reset_password"):
+        raise HTTPException(status_code=400, detail="Invalid purpose.")
+
+    worker_id = (req.worker_id or "").strip() or None
+    if purpose == "reset_password":
+        if not worker_id:
+            raise HTTPException(status_code=400, detail="Worker ID is required for password reset.")
+        w = db.query(Worker).filter(Worker.worker_id == worker_id).first()
+        if not w or not w.email_verified or _norm_email(w.email or "") != email:
+            raise HTTPException(status_code=400, detail="No verified email for this Worker ID.")
+        email = _norm_email(w.email)
+
+    code, mailed = _issue_otp(db, email, purpose, worker_id)
+    out = {
+        "status": "sent",
+        "mailed": mailed,
+        "message": "Code sent to your email." if mailed else "Mail is not configured on the server — use the dev code below.",
+        "email_masked": _mask_email(email),
+    }
+    if not mailed:
+        out["dev_otp"] = code  # local/dev only when SMTP is off
+    return out
+
+
+@router.post("/email/verify-otp")
+def verify_email_otp(req: VerifyEmailOtpRequest, db: Session = Depends(get_db)):
+    """
+    Confirm OTP.
+    verify_email → marks worker email verified if worker_id given (profile),
+                   or returns verified=true for register form.
+    reset_password → marks OTP consumed; client then calls /forgot/reset
+    """
+    _ensure_email_columns(db)
+    email = _norm_email(req.email)
+    code = _norm_otp_code(req.code)
+    purpose = (req.purpose or "").strip()
+    if not email or not code:
+        raise HTTPException(status_code=400, detail="Email and code are required.")
+
+    row = (
+        db.query(EmailOtp)
+        .filter(
+            EmailOtp.email == email,
+            EmailOtp.purpose == purpose,
+            EmailOtp.consumed == False,  # noqa: E712
+        )
+        .order_by(EmailOtp.id.desc())
+        .first()
+    )
+    if not row or _norm_otp_code(row.code) != code:
+        raise HTTPException(status_code=400, detail="Invalid or expired code.")
+    # 90s grace: container clock / TZ drift should not fail a fresh code
+    if row.expires_at < datetime.utcnow() - timedelta(seconds=90):
+        raise HTTPException(status_code=400, detail="Code expired. Request a new one.")
+
+    row.consumed = True
+    worker_id = (req.worker_id or row.worker_id or "").strip() or None
+
+    if purpose == "verify_email" and worker_id:
+        w = db.query(Worker).filter(Worker.worker_id == worker_id).first()
+        if w:
+            w.email = email
+            w.email_verified = True
+
+    db.commit()
+    return {
+        "status": "verified",
+        "email": email,
+        "email_verified": True,
+        "purpose": purpose,
+    }
+
+
+@router.post("/forgot/lookup")
+def forgot_lookup(req: ForgotLookupRequest, db: Session = Depends(get_db)):
+    """After Worker ID is entered on forgot-password: which options are available."""
+    _ensure_email_columns(db)
+    wid = (req.worker_id or "").strip()
+    w = db.query(Worker).filter(Worker.worker_id == wid).first()
+    if not w:
+        # Do not reveal whether ID exists in a detailed way — still return safe shape
+        raise HTTPException(status_code=404, detail="Worker ID not found.")
+    has = bool(w.email and w.email_verified)
+    return {
+        "worker_id": w.worker_id,
+        "has_verified_email": has,
+        "email_masked": _mask_email(w.email) if has else None,
+        "admin_reset_available": True,
+        "message": (
+            "You can reset by email or ask your supervisor for a temporary password."
+            if has
+            else "No verified email on this ID. Ask your supervisor for a temporary password."
+        ),
+    }
+
+
+@router.post("/forgot/send-otp")
+def forgot_send_otp(req: ForgotLookupRequest, db: Session = Depends(get_db)):
+    """Send reset OTP to the verified email on file for this Worker ID."""
+    _ensure_email_columns(db)
+    wid = (req.worker_id or "").strip()
+    w = db.query(Worker).filter(Worker.worker_id == wid).first()
+    if not w or not w.email_verified or not w.email:
+        raise HTTPException(status_code=400, detail="No verified email for this Worker ID. Use the admin option.")
+    email = _norm_email(w.email)
+    code, mailed = _issue_otp(db, email, "reset_password", wid)
+    out = {
+        "status": "sent",
+        "mailed": mailed,
+        "email_masked": _mask_email(email),
+        "message": "Code sent." if mailed else "Mail not configured — use the dev code.",
+    }
+    if not mailed:
+        out["dev_otp"] = code
+    return out
+
+
+@router.post("/forgot/reset")
+def forgot_reset(req: ForgotResetRequest, db: Session = Depends(get_db)):
+    """Reset password after a valid reset OTP for this Worker ID."""
+    _ensure_email_columns(db)
+    wid = (req.worker_id or "").strip()
+    code = _norm_otp_code(req.code)
+    new_password = req.new_password or ""
+    if len(new_password) < 6:
+        raise HTTPException(status_code=400, detail="Password must be at least 6 characters.")
+
+    w = db.query(Worker).filter(Worker.worker_id == wid).first()
+    if not w or not w.email_verified or not w.email:
+        raise HTTPException(status_code=400, detail="Email reset is not available for this Worker ID.")
+
+    email = _norm_email(w.email)
+    row = (
+        db.query(EmailOtp)
+        .filter(
+            EmailOtp.email == email,
+            EmailOtp.purpose == "reset_password",
+            EmailOtp.worker_id == wid,
+            EmailOtp.consumed == False,  # noqa: E712
+        )
+        .order_by(EmailOtp.id.desc())
+        .first()
+    )
+    if not row or _norm_otp_code(row.code) != code:
+        raise HTTPException(status_code=400, detail="Invalid or expired code.")
+    if row.expires_at < datetime.utcnow() - timedelta(seconds=90):
+        raise HTTPException(status_code=400, detail="Code expired. Request a new one.")
+
+    row.consumed = True
+    db.commit()
+    from auth.user_accounts import set_password_for_user
+    set_password_for_user(db, wid, new_password)  # also revokes all sessions
+
+    # Security notice — password was changed via email reset
+    try:
+        send_password_changed_email(
+            email,
+            name=w.name or "",
+            worker_id=wid,
+        )
+    except Exception as e:
+        print(f"[SkillVault mail] password-changed email failed: {e}")
+
+    return {"status": "password_updated", "message": "Password updated. You can log in now."}
+
+
+@router.post("/forgot/request-admin")
+def forgot_request_admin(req: ForgotLookupRequest, db: Session = Depends(get_db)):
+    """
+    Worker chooses "ask supervisor" on forgot-password.
+    Creates a pending request; admin can set a temp password only after this.
+    """
+    _ensure_email_columns(db)
+    wid = (req.worker_id or "").strip()
+    w = db.query(Worker).filter(Worker.worker_id == wid).first()
+    if not w:
+        raise HTTPException(status_code=404, detail="Worker ID not found.")
+
+    existing = (
+        db.query(PasswordResetRequest)
+        .filter(
+            PasswordResetRequest.worker_id == wid,
+            PasswordResetRequest.status == "pending",
+        )
+        .first()
+    )
+    if existing:
+        return {
+            "status": "pending",
+            "request_id": existing.id,
+            "message": "A reset request is already waiting for your supervisor.",
+        }
+
+    row = PasswordResetRequest(worker_id=wid, status="pending")
+    db.add(row)
+    db.commit()
+    db.refresh(row)
+    return {
+        "status": "pending",
+        "request_id": row.id,
+        "message": "Request sent. Your supervisor can set a temporary password after they approve it.",
     }

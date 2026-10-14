@@ -1,0 +1,193 @@
+@import "tailwindcss";
+
+/* ============================================================
+   SkillVault — "Warm Studio" theme
+   Soft cream surfaces, warm ink, friendly teal + soft amber.
+   Headings: Outfit (loaded from index.html) — body: Inter
+   ============================================================ */
+
+@theme {
+  --color-bg: #f7f4ef;
+  --color-surface: #fffcf8;
+  --color-surface-2: #f0ebe3;
+  --color-surface-3: #e8e1d6;
+  --color-line: #ddd4c8;
+
+  --color-signal: #0f9d8a;
+  --color-signal-dim: #0c7d6e;
+  --color-amber: #d97706;
+  --color-danger: #dc4b4b;
+
+  --color-text: #1c1917;
+  --color-muted: #78716c;
+
+  --font-display: "Outfit", "Inter", ui-sans-serif, system-ui, sans-serif;
+  --font-body: "Inter", ui-sans-serif, system-ui, sans-serif;
+  --font-mono: "JetBrains Mono", ui-monospace, monospace;
+
+  --shadow-signal: 0 1px 0 rgba(255,255,255,.4) inset, 0 8px 20px -8px rgba(15,157,138,.35);
+  --shadow-amber: 0 1px 0 rgba(255,255,255,.35) inset, 0 8px 20px -8px rgba(217,119,6,.3);
+}
+
+* { box-sizing: border-box; }
+html, body, #root { height: 100%; }
+
+:root, body { color-scheme: light; }
+
+body {
+  margin: 0;
+  position: relative;
+  color: var(--color-text);
+  font-family: var(--font-body);
+  -webkit-font-smoothing: antialiased;
+  background-color: var(--color-bg);
+  background-image:
+    radial-gradient(ellipse 90% 55% at 0% 0%, rgba(15, 157, 138, 0.09), transparent 55%),
+    radial-gradient(ellipse 70% 45% at 100% 0%, rgba(217, 119, 6, 0.07), transparent 50%),
+    radial-gradient(ellipse 80% 50% at 50% 100%, rgba(15, 157, 138, 0.05), transparent 55%),
+    linear-gradient(180deg, #faf7f2 0%, #f5f1ea 45%, #f2ede6 100%);
+  background-attachment: fixed;
+}
+
+body::after {
+  content: "";
+  position: fixed;
+  inset: 0;
+  pointer-events: none;
+  z-index: 0;
+  opacity: 0.35;
+  background-image:
+    linear-gradient(rgba(180, 160, 140, 0.18) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(180, 160, 140, 0.18) 1px, transparent 1px);
+  background-size: 48px 48px;
+  mask-image: radial-gradient(ellipse 90% 80% at 50% 40%, black 10%, transparent 75%);
+  -webkit-mask-image: radial-gradient(ellipse 90% 80% at 50% 40%, black 10%, transparent 75%);
+}
+
+body::before {
+  content: "";
+  position: fixed;
+  inset: 0;
+  pointer-events: none;
+  z-index: 0;
+  background:
+    radial-gradient(40% 30% at 15% 10%, rgba(15, 157, 138, 0.06), transparent 70%),
+    radial-gradient(35% 25% at 88% 8%, rgba(217, 119, 6, 0.05), transparent 65%);
+}
+
+#root { position: relative; z-index: 1; }
+
+::selection { background: rgba(15, 157, 138, 0.2); color: #0a3d36; }
+
+::-webkit-scrollbar { width: 10px; height: 10px; }
+::-webkit-scrollbar-track { background: transparent; }
+::-webkit-scrollbar-thumb { background: var(--color-line); border-radius: 8px; }
+::-webkit-scrollbar-thumb:hover { background: #c4b8a8; }
+
+/* Headings: Outfit (from index.html link) */
+h1, h2, h3, h4,
+.font-display,
+.sv-heading {
+  font-family: var(--font-display);
+  letter-spacing: -0.02em;
+  font-weight: 650;
+  color: var(--color-text);
+}
+
+h1 {
+  font-weight: 700;
+  letter-spacing: -0.025em;
+}
+
+h2 {
+  font-weight: 650;
+  letter-spacing: -0.02em;
+}
+
+h3 {
+  font-weight: 600;
+  letter-spacing: -0.015em;
+}
+
+.font-mono { font-family: var(--font-mono); }
+a { color: inherit; }
+
+.sv-card {
+  position: relative;
+  background: linear-gradient(180deg, #fffcf8 0%, #faf6f0 100%);
+  border: 1px solid var(--color-line);
+  border-radius: 16px;
+  box-shadow:
+    0 1px 2px rgba(28, 25, 23, 0.04),
+    0 10px 28px -14px rgba(28, 25, 23, 0.1);
+}
+.sv-card::before,
+.sv-card::after {
+  content: "";
+  position: absolute;
+  width: 12px;
+  height: 12px;
+  border-color: var(--color-signal);
+  opacity: 0.35;
+  transition: opacity .25s ease, width .25s ease, height .25s ease;
+  pointer-events: none;
+}
+.sv-card::before {
+  top: -1px; left: -1px;
+  border-top: 2px solid; border-left: 2px solid;
+  border-top-left-radius: 6px;
+}
+.sv-card::after {
+  bottom: -1px; right: -1px;
+  border-bottom: 2px solid; border-right: 2px solid;
+  border-bottom-right-radius: 6px;
+}
+.sv-card:hover::before,
+.sv-card:hover::after {
+  opacity: 0.7;
+  width: 18px;
+  height: 18px;
+}
+
+.sv-grid-tile {
+  background-image:
+    linear-gradient(rgba(180, 160, 140, 0.2) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(180, 160, 140, 0.2) 1px, transparent 1px);
+  background-size: 28px 28px;
+}
+
+.sv-glow-text { text-shadow: none; color: var(--color-signal); }
+
+@keyframes sv-pulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.45; } }
+.sv-pulse { animation: sv-pulse 1.6s ease-in-out infinite; }
+
+@keyframes sv-drift { 0% { background-position: 0 0; } 100% { background-position: 48px 48px; } }
+.sv-drift-grid { animation: sv-drift 10s linear infinite; }
+
+@keyframes sv-rise {
+  from { opacity: 0; transform: translateY(12px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+.sv-rise { animation: sv-rise .55s cubic-bezier(.16,.8,.24,1) both; }
+
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after {
+    animation-duration: 0.001ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.001ms !important;
+  }
+}
+
+input, textarea, select, button { font-family: inherit; }
+
+select {
+  background-color: var(--color-surface-2);
+  color: var(--color-text);
+}
+select option {
+  background-color: var(--color-surface);
+  color: var(--color-text);
+}
+
+.sv-scrollbar-none::-webkit-scrollbar { display: none; }
+.sv-scrollbar-none { scrollbar-width: none; }
